@@ -1,0 +1,4 @@
+# private keys and certificates: never commit
+/cert/
+*.pem
+*.epm

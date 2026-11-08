@@ -21,12 +21,12 @@
 (require "doom/http/h2.scm")
 (require "doom/http/html.scm")
 
-(require "demo/h2/redirect.scm")
-(require "demo/h2/stats.scm")
-(require "demo/h2/handler.scm")
-(require "demo/h2/file-handler.scm")
-(require "demo/h2/timestamp.scm")
-(require "demo/h2/dns.scm") ;; for ptr lookups
+(require "redirect.scm")
+(require "stats.scm")
+(require "handler.scm")
+(require "file-handler.scm")
+(require "timestamp.scm")
+(require "dns.scm") ;; for ptr lookups
 
 (define (send-status request code)
   (debugf "=> " (ansi red code) " " (string (if-maybe p (lookup-header ":path" request.headers) p "none")) "\n")
