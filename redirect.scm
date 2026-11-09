@@ -5,7 +5,7 @@
 
 ;; ACME http-01 (rfc8555 8.3): answer
 ;;  /.well-known/acme-challenge/<token> with the file <token> in
-;;  <acme-dir> (where an ACME client such as demo/acme writes them).
+;;  <acme-dir> (where an ACME client such as acme/acme.scm writes them).
 (define acme-challenge-prefix "/.well-known/acme-challenge/")
 
 (define (acme-token-ok? token)

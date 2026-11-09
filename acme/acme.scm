@@ -3,12 +3,12 @@
 ;; a small ACME (rfc8555) client, for getting certificates from
 ;;  Let's Encrypt with http-01 challenges.
 ;;
-;; $ demo/acme/acme -challenges /var/acme dark.nightmare.com nightmare.com
+;; $ irken-acme -challenges /var/acme dark.nightmare.com nightmare.com
 ;;
 ;; the challenge responses are written to the -challenges directory,
 ;;  as files named by their tokens: a web server must answer
 ;;  http://<name>/.well-known/acme-challenge/<token> with them (see
-;;  serve -acme in demo/h2).
+;;  irken-h2d -acme, i.e. serve.scm).
 ;;
 ;; the account key and the certificate's key are P-256 keys, created
 ;;  as needed and kept (PKCS#8 PEM).  with -days, nothing is done while

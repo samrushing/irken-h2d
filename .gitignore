@@ -2,3 +2,13 @@
 /cert/
 *.pem
 *.epm
+
+# build output
+*.c
+*.s
+*.byc
+/serve
+/acme/acme
+/t-auth
+/t-decode-timestamp
+/t-lookup-month

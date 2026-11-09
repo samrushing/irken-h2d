@@ -5,20 +5,22 @@ A small ACME (RFC 8555) client, using http-01 challenges.  It uses
 only Irken's own TLS 1.3 client, HTTP/2 or HTTP/1.1, JSON, and P-256
 ECDSA: no openssl, no certbot.
 
-$ self/compile demo/acme/acme.scm
+$ irken acme/acme.scm
 
-    demo/acme/acme -challenges <dir> [options] name ...
+    irken-acme -challenges <dir> [options] name ...
+
+(installed as irken-acme, to keep it apart from other ACME tools.)
 
 The challenge responses are written as files named by their tokens in
 <dir>; a web server must answer
 
     http://<name>/.well-known/acme-challenge/<token>
 
-with the contents of <dir>/<token>.  The Irken h2 server does this on
-its port-80 (redirect) listener with -acme:
+with the contents of <dir>/<token>.  irken-h2d (serve.scm) does this
+on its port-80 (redirect) listener with -acme:
 
-    demo/h2/serve 0.0.0.0:443 -root /var/www -cert cert.pem -key key.pem \
-        -acme /var/acme
+    irken-h2d -root /var/www -cert cert.pem -key key.pem \
+        -acme /var/acme 0.0.0.0:443
 
 so certificates can be renewed while the server keeps running.  (Other
 requests to port 80 are still redirected to https.)
@@ -54,13 +56,16 @@ Renewing from cron
 Certificates last 90 days (64 from February 2027, 45 from February
 2028).  Something like this, daily:
 
-    cd /usr/local/etc/irken-httpd && \
-      /usr/local/bin/acme -challenges /var/acme -days 30 \
-        nightmare.com dark.nightmare.com www.nightmare.com \
-      | grep -q '^wrote' && pkill -HUP -x serve
+    /usr/local/bin/irken-acme -challenges /var/acme -days 30 \
+        -account /usr/local/etc/ssl/dark/acme-account.key \
+        -key /usr/local/etc/ssl/dark/dark.key \
+        -cert /usr/local/etc/ssl/dark/dark.chain \
+        nightmare.com dark.nightmare.com www.nightmare.com unintuitive.org \
+      | grep -q '^wrote' && service irken_h2d reload
 
-acme prints "wrote cert.pem" when it renews (and exits 0 both then and
-when there's nothing to do).  On SIGHUP, serve reloads its -cert and
+irken-acme prints "wrote <cert>" when it renews (and exits 0 both then
+and when there's nothing to do).  "service irken_h2d reload" (see
+irken_h2d.sh) sends the server SIGHUP, and it reloads its -cert and
 -key: new connections use them, and existing ones carry on.  If they
 can't be loaded, or the key doesn't match the certificate, it keeps the
 old ones (and says so).  [SIGHUP reloading uses kqueue, so for now it
@@ -76,8 +81,8 @@ and pebble's httpPort set to the server's -http port:
     pebble-challtestsrv -http01 "" -https01 "" -tlsalpn01 "" -doh "" \
         -dnsserver 127.0.0.1:8053 &
     pebble -config config.json -dnsserver 127.0.0.1:8053 &
-    demo/h2/serve 127.0.0.1:4433 -http 5080 -acme /tmp/acme ... &
-    demo/acme/acme -server https://localhost:14000/dir \
+    ./serve -http 5080 -acme /tmp/acme ... 127.0.0.1:4433 &
+    acme/acme -server https://localhost:14000/dir \
         -root test/certs/pebble.minica.pem -challenges /tmp/acme test.example.com
 
 Not (yet) supported
