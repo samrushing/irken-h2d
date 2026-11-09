@@ -168,16 +168,10 @@
      -> (sock.close)
      )))
 
-;; <acme-dir> is (maybe dir): see redirect-channel.
-(define (serve-redirect ip port acme-dir)
-  (let ((sock (doom/make (tcp4-sock)))
-        (addr (address/make4 ip port)))
-    (sock.bind addr)
-    ;; a small backlog fails under a burst of connections: macOS (and
-    ;;  FreeBSD) reset connections once the accept queue is full.
-    (sock.listen SOMAXCONN)
-    (logf "starting redirect server... on " (address/unparse addr))
-    (debugf "  server fd = " (int (sock.get-fd)) "\n")
+;; accept connections on <sock> (see listen-on in serve.scm).
+;;  <acme-dir> is (maybe dir): see redirect-channel.
+(define (serve-redirect sock acme-dir)
+  (begin
     (let loop ()
       (debugf "accept wait...\n")
       (try

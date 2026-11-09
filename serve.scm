@@ -90,16 +90,21 @@
           )
          )))))
 
-;; handler := (lambda (sockfun) ...)
-(define (serve ip port handler)
+;; a listening socket on <ip>:<port>.  (separate from the accept loops,
+;;  so that privileged ports can be bound before dropping root.)
+(define (listen-on ip port)
   (let ((sock (doom/make (tcp4-sock)))
         (addr (address/make4 ip port)))
     (sock.bind addr)
     ;; a small backlog fails under a burst of connections: macOS (and
     ;;  FreeBSD) reset connections once the accept queue is full.
     (sock.listen SOMAXCONN)
-    (logf "starting h2s server... on " (address/unparse addr))
-    (debugf "  server fd = " (int (sock.get-fd)) "\n")
+    (debugf "listening on " (address/unparse addr) ", fd = " (int (sock.get-fd)) "\n")
+    sock))
+
+;; handler := (lambda (sockfun) ...)
+(define (serve sock handler)
+  (begin
     (let loop ()
       (debugf "accept wait...\n")
       (try
@@ -216,6 +221,7 @@
    (arg 'log  (string "/var/log/irken-httpd.log"))
    (arg 'acme (string ""))
    (arg 'users (string ""))
+   (arg 'user (string ""))
    (flag 'd)
    (arg 'http (int 80))
    (flag 'r)
@@ -246,6 +252,8 @@
           "  [-http <port>] use <port> instead of 80 for redirects & challenges\n"
           "  [-users <file>] users for /status (basic auth): name:password lines.\n"
           "     without it, /status is disabled.\n"
+          "  [-user <name>] after binding the ports, run as this user\n"
+          "     (start as root to bind ports 80 and 443)\n"
           "  [-d] print debugging output\n"
           "  [-h] print this usage.\n"
           "\n"
@@ -282,7 +290,8 @@
         (acme-dir (maybe:no))
         (http-port 80)
         (log  "/var/log/irken-httpd.log")
-        (users (maybe:no)))
+        (users (maybe:no))
+        (user (maybe:no)))
     (when-maybe v (get-bool-opt opts 'h) (usage))
     (when-maybe v (get-bool-opt opts 'r) (set! redirect? #f))
     (when-maybe v (get-string-opt opts 'root) (set! root v))
@@ -293,8 +302,11 @@
     (when-maybe v (get-string-opt opts 'acme) (when (> (string-length v) 0) (set! acme-dir (maybe:yes v))))
     (when-maybe v (get-int-opt opts 'http) (set! http-port v))
     (when-maybe v (get-string-opt opts 'users) (when (> (string-length v) 0) (set! users (maybe:yes v))))
+    (when-maybe v (get-string-opt opts 'user) (when (> (string-length v) 0) (set! user (maybe:yes v))))
     (set! *debugf* #f)
     (when-maybe v (get-bool-opt opts 'd) (set! *debugf* v))
+    ;; the runtime's GC messages (on stderr, so also in syslog) too.
+    (set-verbose-gc *debugf*)
     (set! *dnscache* (dnscache/make "127.0.0.1" 1000))
 
     (let ((creds (try
@@ -317,10 +329,29 @@
       (set! *logfile* (maybe:yes (file/open-append log #o644)))
       (logf "read " (int (length creds.x509s)) " certs from " cert)
       (debugf "redirect? " (bool redirect?) "\n")
-      (when (or redirect? (not (eq? acme-dir (maybe:no))))
-        (poller/fork (lambda () (serve-redirect ip http-port acme-dir))))
-      (reload-on-sighup creds cert key)
-      (serve ip port (h2-channel handler creds '("h2")))
+      (let ((main-sock (listen-on ip port))
+            (http-sock (if (or redirect? (not (eq? acme-dir (maybe:no))))
+                           (maybe:yes (listen-on ip http-port))
+                           (maybe:no))))
+        (logf "listening on " addr
+              (match http-sock with
+                (maybe:yes _) -> (format " and port " (int http-port))
+                (maybe:no) -> ""))
+        ;; the ports are bound, and the log file and certificates
+        ;;  read: give up root.
+        (when-maybe name user
+          (try
+           (begin
+             (drop-privileges name)
+             (logf "running as " name))
+           except
+           (:OSError e) -> (begin (logf "can't run as " name ": " (strerror e)) (%exit #f 1))
+           (:Posix/NoSuchUser _) -> (begin (logf "no such user: " name) (%exit #f 1))
+           (:Posix/StillRoot _) -> (begin (logf "still root after becoming " name) (%exit #f 1))))
+        (when-maybe sock http-sock
+          (poller/fork (lambda () (serve-redirect sock acme-dir))))
+        (reload-on-sighup creds cert key)
+        (serve main-sock (h2-channel handler creds '("h2"))))
       (poller/wait-and-schedule))))
 
 ;; don't let SIGPIPE take down the server.
