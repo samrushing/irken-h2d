@@ -169,8 +169,9 @@
           (conn-event:h2-error s)         -> (push! r (format "h2-error: " (string s)))
           (conn-event:os-error s)         -> (push! r (format "os-error: " (string s)))
           (conn-event:tls-good sexp)      -> (push! r (format "good tls"))
+          (conn-event:redirect s)         -> (push! r (format "http: " s))
           _                               -> #u))
-      (rope/join-string ", " (map rope:leaf r))))
+      (string-join (reverse r) ", ")))
 
   (define (maybe-get-tls-data events)
     (let loop ((events events))
@@ -198,12 +199,12 @@
           (let ((hostname (*dnscache* host.addr)))
             (emit
              (rope->string
-              (html (tr (td ((a (href (format "/status/addr/" host.addr))) host.addr))
-                        (td hostname)
+              (html (tr (td ((a (href (format "/status/addr/" host.addr))) (&t host.addr)))
+                        (td (&t hostname))
                         ((td (align "right"))
                          ((a (href (format "/status/requests/" host.addr "/")))
                           (&f (int (count-requests host.events)))))
-                        (td (&= (disposition host.events)))))
+                        (td (&t (disposition host.events)))))
               ))))
         (emit (format "</table></body></html>")))))
 
@@ -224,7 +225,7 @@
                    "<!doctype html>"
                    (html
                     (head (style sexp-css))
-                    (body (h2 addr)
+                    (body (h2 (&t addr))
                           (&pp exp)
                           ))))
                  #t))
@@ -256,15 +257,16 @@
        (get-one ":scheme")
        (get-one ":authority")
        (get-one ":path")))
-    (format "<tr><td><a href=\"./" (int qnum) "\"</a>" (int qnum) "</td><td>" (join "</td><td>" (get-pseudos)) "</td></tr>\n")
+    (format "<tr><td><a href=\"./" (int qnum) "\">" (int qnum) "</a></td><td>"
+            (join "</td><td>" (map html-escape (get-pseudos))) "</td></tr>\n")
     )
 
   (define (gen-requests-table addr events)
     (makegen emit
       (emit (format "<html><body><style type=\"text/css\">\n"
                     table-css
-                    "</style><h1>requests for " addr "</h1>\n"
-                    "<h2>" (*dnscache* addr) "</h2>\n"
+                    "</style><h1>requests for " (html-escape addr) "</h1>\n"
+                    "<h2>" (html-escape (*dnscache* addr)) "</h2>\n"
                     "<table><tr><th>num</th><th>method</th><th>scheme</th><th>authority</th><th>path</th></tr>\n"))
       (let loop ((i 1)
                  (events events))
@@ -328,7 +330,7 @@
 
     (define format-one-header
       (:tuple key val)
-      -> (html (tr (td key) (td val)))
+      -> (html (tr (td (&t key)) (td (&t val))))
       )
 
     (match (find-single-request addr (safe-string->int num)) with
@@ -343,6 +345,22 @@
       (maybe:no)
       -> (send-status request "404")
       ))
+
+;; a request that changes something (shutdown, gc) must not come from
+  ;;  another site's page: browsers resend basic-auth credentials with
+  ;;  cross-site requests, so <img src=".../status/shutdown"> anywhere
+  ;;  would do.  browsers say where a request came from in
+  ;;  sec-fetch-site; tools like curl don't send it.
+  (define (same-site? request)
+    (match (lookup-header "sec-fetch-site" request.headers) with
+      (maybe:yes "same-origin") -> #t
+      (maybe:yes "none")        -> #t ;; typed into the address bar
+      (maybe:yes _)             -> #f
+      (maybe:no)                -> #t))
+
+  (define (refuse-cross-site request)
+    (request.send-headers "403" (list (:tuple "content-type" "text/plain")) #t)
+    (request.send-data "cross-site request refused\n" #t))
 
   (define (handle-requests-gc request)
     (let ((count (^gc-flip)))
@@ -389,11 +407,13 @@
                  "GET" ("" "status" "requests" addr num)
                  -> (maybe:yes (lambda (request) (handle-single-request request addr num)))
                  "GET" ("" "status" "gc")
-                 -> (maybe:yes handle-requests-gc)
+                 -> (maybe:yes (lambda (request)
+                                 (if (same-site? request) (handle-requests-gc request) (refuse-cross-site request))))
                  "GET" ("" "status" "addrs" "")
                  -> (maybe:yes handle-addrs)
                  "GET" ("" "status" "shutdown")
-                 -> (maybe:yes handle-shutdown)
+                 -> (maybe:yes (lambda (request)
+                                 (if (same-site? request) (handle-shutdown request) (refuse-cross-site request))))
                  "GET" ("" "status" "")
                  -> (maybe:yes handle-toplevel)
                  _ _
@@ -525,6 +545,6 @@
 (define (h2-handler sub-handler)
   (lambda (request)
     (match (sub-handler request) with
-      (maybe:yes fun) -> (begin (fun request) (note-request request))
+      (maybe:yes fun) -> (fun request)
       (maybe:no)      -> (send-404 request)
       )))

@@ -62,8 +62,14 @@
           (let ((sock (tls13/make-channel sockfun creds.x509s creds.skey alpns)))
             (note-event stat (conn-event:tls-good (sock.get-info)))
             (try
-             ;; create and invoke h2 read-frames loop.
-             ((make-h2-conn addr sock h2-handler))
+             ;; create and invoke h2 read-frames loop.  each request is
+             ;;  recorded against this connection's entry (not looked up by
+             ;;  address: another connection may share it, e.g. one to
+             ;;  port 80 from the same source port).
+             ((make-h2-conn addr sock
+                            (lambda (request)
+                              (note-event stat (conn-event:h2-request request.headers))
+                              (h2-handler request))))
              except
              (:Doom/EOF _)
              -> (note-event stat (conn-event:os-error "eof"))

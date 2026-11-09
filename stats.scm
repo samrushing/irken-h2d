@@ -56,12 +56,3 @@
     {add=add get=get get-all=get-all clear=clear}
 
     ))
-
-(define (note-request request)
-  (let ((info (request.get-info)))
-    (match (*stats*.get info.addr) with
-      (maybe:yes entry)
-      -> (push! entry.events (conn-event:h2-request request.headers))
-      (maybe:no)
-      -> #u
-      )))
