@@ -486,15 +486,20 @@
         (maybe:yes auth)
         -> (match (string-split auth #\space) with
              ("Basic" b64auth)
-             -> (match (string-split (b64-decode b64auth) #\:) with
-                  (user pass)
-                  -> (match (tree/member usermap string-cmp user) with
-                       (maybe:yes pass0)
-                       -> (string=? pass pass0)
-                       _ -> #f
-                       )
-                  _ -> #f
-                  )
+             ;; user-id ":" password: the password may contain colons
+             ;;  (rfc7617 2), so split at the first one.
+             -> (let ((creds (b64-decode b64auth))
+                      (colon (string-find ":" creds)))
+                  (if (< colon 0)
+                      #f
+                      (match (tree/member usermap string-cmp (substring creds 0 colon)) with
+                        (maybe:yes pass0)
+                        ;; compare hashes: constant-time, whatever the lengths.
+                        -> (constant-time-string=?
+                            (sha256 (substring creds (+ colon 1) (string-length creds)))
+                            (sha256 pass0))
+                        _ -> #f
+                        )))
              _ -> #f
              )
         _ -> #f

@@ -20,6 +20,17 @@ Irken's libraries, so re-install Irken after changing them.
 
 irken_h2d.sh is a FreeBSD rc script: see the comments at its top.
 
+Status page and logging
+-----------------------
+
+/status/ (basic auth) is enabled with -users <file>, a file of
+"name:password" lines kept outside the repo (mode 0600: the server
+warns otherwise).  Without -users, /status/ is disabled.
+
+Under daemon(8), the server's output goes to syslog.  It logs only
+startup, SIGHUP reloads and errors, as plain lines; -d adds the
+(colorful) per-connection debugging output.
+
 Certificates
 ------------
 

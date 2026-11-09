@@ -176,7 +176,7 @@
     ;; a small backlog fails under a burst of connections: macOS (and
     ;;  FreeBSD) reset connections once the accept queue is full.
     (sock.listen SOMAXCONN)
-    (debugf "starting redirect server... on " (address/unparse addr) "\n")
+    (logf "starting redirect server... on " (address/unparse addr))
     (debugf "  server fd = " (int (sock.get-fd)) "\n")
     (let loop ()
       (debugf "accept wait...\n")
@@ -191,14 +191,14 @@
                 ;; out of file descriptors: back off for a moment, rather
                 ;;  than leave the accept loop (which stops the server).
                 ((or (= errno EMFILE) (= errno ENFILE))
-                 (debugf "accept: out of file descriptors (" (int errno) ")\n")
+                 (logf "accept: out of file descriptors (" (int errno) ")")
                  (timeq/sleep 100)
                  (loop))
                 (else
-                 (debugf "OSError on accepting socket: " (int errno) "\n")))
+                 (logf "OSError on accepting socket: " (int errno))))
        )
       )
-    (debugf "after accept loop.\n")
+    (logf "after accept loop.")
     ))
     
 ;; (define (main)

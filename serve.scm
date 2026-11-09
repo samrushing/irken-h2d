@@ -21,6 +21,7 @@
 (require "doom/http/h2.scm")
 (require "doom/http/html.scm")
 
+(require "log.scm")
 (require "redirect.scm")
 (require "stats.scm")
 (require "handler.scm")
@@ -97,7 +98,7 @@
     ;; a small backlog fails under a burst of connections: macOS (and
     ;;  FreeBSD) reset connections once the accept queue is full.
     (sock.listen SOMAXCONN)
-    (debugf "starting h2s server... on " (address/unparse addr) "\n")
+    (logf "starting h2s server... on " (address/unparse addr))
     (debugf "  server fd = " (int (sock.get-fd)) "\n")
     (let loop ()
       (debugf "accept wait...\n")
@@ -112,14 +113,14 @@
                 ;; out of file descriptors: back off for a moment, rather
                 ;;  than leave the accept loop (which stops the server).
                 ((or (= errno EMFILE) (= errno ENFILE))
-                 (debugf "accept: out of file descriptors (" (int errno) ")\n")
+                 (logf "accept: out of file descriptors (" (int errno) ")")
                  (timeq/sleep 100)
                  (loop))
                 (else
-                 (debugf "OSError on accepting socket: " (int errno) "\n")))
+                 (logf "OSError on accepting socket: " (int errno))))
        )
       )
-    (debugf "after accept loop.\n")
+    (logf "after accept loop.")
     ))
 
 (define (read-certs path)
@@ -162,15 +163,15 @@
      (let ((new (load-creds cert key)))
        (set! creds.x509s new.x509s)
        (set! creds.skey new.skey)
-       (debugf "SIGHUP: reloaded " cert " (" (int (length new.x509s)) " certs) and " key "\n"))
+       (logf "SIGHUP: reloaded " cert " (" (int (length new.x509s)) " certs) and " key))
      except
-     (:Serve/BadCreds why) -> (debugf "SIGHUP: " why ": keeping the old ones\n")
-     (:OSError n) -> (debugf "SIGHUP: " (strerror n) ": keeping the old ones\n")
-     (:TLS/ExpectedCertificate path) -> (debugf "SIGHUP: unexpected PEM in " path ": keeping the old ones\n")
-     (:SIG/NoPEMFound path) -> (debugf "SIGHUP: no key in " path ": keeping the old ones\n")
-     (:SIG/UnexpectedPEM kind) -> (debugf "SIGHUP: unexpected PEM " kind ": keeping the old ones\n")
-     (:X509/Unexpected what _) -> (debugf "SIGHUP: can't parse the certificate (" what "): keeping the old ones\n")
-     (:X509/Unsupported what _) -> (debugf "SIGHUP: unsupported certificate (" what "): keeping the old ones\n")))
+     (:Serve/BadCreds why) -> (logf "SIGHUP: " why ": keeping the old ones")
+     (:OSError n) -> (logf "SIGHUP: " (strerror n) ": keeping the old ones")
+     (:TLS/ExpectedCertificate path) -> (logf "SIGHUP: unexpected PEM in " path ": keeping the old ones")
+     (:SIG/NoPEMFound path) -> (logf "SIGHUP: no key in " path ": keeping the old ones")
+     (:SIG/UnexpectedPEM kind) -> (logf "SIGHUP: unexpected PEM " kind ": keeping the old ones")
+     (:X509/Unexpected what _) -> (logf "SIGHUP: can't parse the certificate (" what "): keeping the old ones")
+     (:X509/Unsupported what _) -> (logf "SIGHUP: unsupported certificate (" what "): keeping the old ones")))
   (if poller/signals?
       (begin
         (signal/ignore SIGHUP)
@@ -180,7 +181,28 @@
              (poller/wait-for-signal SIGHUP)
              (reload)
              (loop)))))
-      (debugf "no SIGHUP reloading on this platform (yet)\n")))
+      (logf "no SIGHUP reloading on this platform (yet)")))
+
+;; -users: "name:password" lines; blank lines and #-comments are skipped.
+(define (load-users path)
+  (let ((info (stat path))
+        (users (tree/empty))
+        (n 0))
+    (when (not (= 0 (logand info.mode #o077)))
+      (logf "warning: " path " can be read by others: chmod 600 it"))
+    (with-file f (file/open-read path)
+      (for-list line0 (file/read-lines f)
+        (let ((line (string-trim-both line0))
+              (colon (string-find ":" line)))
+          (inc! n)
+          (cond ((= 0 (string-length line)) #u)
+                ((eq? (string-ref line 0) #\#) #u)
+                ((< colon 1) (logf path ": line " (int n) " is not name:password"))
+                (else
+                 (tree/insert! users string-cmp
+                               (substring line 0 colon)
+                               (substring line (+ colon 1) (string-length line))))))))
+    users))
 
 (define *logfile* (maybe:no))
 (define *stats* (make-server-history 1000))
@@ -193,6 +215,8 @@
    (arg 'key  (string "key.pem"))
    (arg 'log  (string "/var/log/irken-httpd.log"))
    (arg 'acme (string ""))
+   (arg 'users (string ""))
+   (flag 'd)
    (arg 'http (int 80))
    (flag 'r)
    (pos 'addr (string "127.0.0.1:4433"))
@@ -220,6 +244,9 @@
           "  [-acme <dir>] on port 80, answer ACME http-01 challenges\n"
           "     (/.well-known/acme-challenge/<token>) from <dir>/<token>\n"
           "  [-http <port>] use <port> instead of 80 for redirects & challenges\n"
+          "  [-users <file>] users for /status (basic auth): name:password lines.\n"
+          "     without it, /status is disabled.\n"
+          "  [-d] print debugging output\n"
           "  [-h] print this usage.\n"
           "\n"
           " note: the root filesystem is expected to be of the form:\n"
@@ -255,7 +282,7 @@
         (acme-dir (maybe:no))
         (http-port 80)
         (log  "/var/log/irken-httpd.log")
-        (usermap (tree/make string-cmp ("foo" "bar") ("gandalf" "shadowfax"))))
+        (users (maybe:no)))
     (when-maybe v (get-bool-opt opts 'h) (usage))
     (when-maybe v (get-bool-opt opts 'r) (set! redirect? #f))
     (when-maybe v (get-string-opt opts 'root) (set! root v))
@@ -265,6 +292,9 @@
     (when-maybe v (get-string-opt opts 'addr) (set! addr v))
     (when-maybe v (get-string-opt opts 'acme) (when (> (string-length v) 0) (set! acme-dir (maybe:yes v))))
     (when-maybe v (get-int-opt opts 'http) (set! http-port v))
+    (when-maybe v (get-string-opt opts 'users) (when (> (string-length v) 0) (set! users (maybe:yes v))))
+    (set! *debugf* #f)
+    (when-maybe v (get-bool-opt opts 'd) (set! *debugf* v))
     (set! *dnscache* (dnscache/make "127.0.0.1" 1000))
 
     (let ((creds (try
@@ -272,15 +302,20 @@
                   except
                   (:Serve/BadCreds why) -> (begin (printf why "\n") (%exit #f 1))))
           ((ip port) (split-addr addr))
+          (status (match users with
+                    (maybe:yes path)
+                    -> (list (basic-auth-wrapper (load-users path) "status" "/status" (status-handler addr opts)))
+                    (maybe:no)
+                    -> (begin (logf "no -users: /status is disabled") (list:nil))))
           (handler (h2-handler
                     (multi-handler
-                     (list (basic-auth-wrapper usermap "status" "/status" (status-handler addr opts))
-                           favicon-handler
-                           (host-handler root)))))
+                     (append status
+                             (list favicon-handler
+                                   (host-handler root))))))
           ;;(handler (h2-handler (host-handler root)))
           )
       (set! *logfile* (maybe:yes (file/open-append log #o644)))
-      (debugf "read " (int (length creds.x509s)) " certs.\n")
+      (logf "read " (int (length creds.x509s)) " certs from " cert)
       (debugf "redirect? " (bool redirect?) "\n")
       (when (or redirect? (not (eq? acme-dir (maybe:no))))
         (poller/fork (lambda () (serve-redirect ip http-port acme-dir))))
