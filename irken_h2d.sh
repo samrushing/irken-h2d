@@ -25,14 +25,18 @@
 #                            "-http 8080", or "-d" for debugging output).
 #                            Default "".
 #                            (irken_h2d_flags, if set, goes to daemon(8).)
-# irken_h2d_user (str):      After binding its ports, the server gives up
+# irken_h2d_server_user (str): After binding its ports, the server gives up
 #                            root and runs as this user (-user), e.g. "www".
+#                            (Not irken_h2d_user: rc.subr reserves
+#                            ${name}_user, and would run the rc commands
+#                            themselves -- start, and stop's kill -- as
+#                            that user.)
 #                            The certificate, key and users file must then
 #                            be readable by it, for SIGHUP reloads.
 #                            Default "" (stay root).
 # irken_h2d_runas (str):     User daemon(8) starts the server as (daemon -u).
 #                            Leave this "root" (the default): binding ports
-#                            80 and 443 needs it; use irken_h2d_user instead.
+#                            80 and 443 needs it; use irken_h2d_server_user.
 # irken_h2d_restart (int):   Seconds to wait before restarting after a crash.
 #                            Default 5. Set to "" to disable auto-restart.
 #
@@ -55,7 +59,7 @@ load_rc_config $name
 : ${irken_h2d_key:="/usr/local/etc/ssl/dark/dark.key"}
 : ${irken_h2d_acme="/var/acme"}
 : ${irken_h2d_users=""}
-: ${irken_h2d_user=""}
+: ${irken_h2d_server_user=""}
 : ${irken_h2d_log=""}
 : ${irken_h2d_args:=""}
 : ${irken_h2d_runas:="root"}
@@ -67,7 +71,7 @@ childpidfile="/var/run/${name}.child.pid"
 _server_args="-root ${irken_h2d_root} -cert ${irken_h2d_cert} -key ${irken_h2d_key}"
 [ -n "${irken_h2d_acme}" ] && _server_args="${_server_args} -acme ${irken_h2d_acme}"
 [ -n "${irken_h2d_users}" ] && _server_args="${_server_args} -users ${irken_h2d_users}"
-[ -n "${irken_h2d_user}" ]  && _server_args="${_server_args} -user ${irken_h2d_user}"
+[ -n "${irken_h2d_server_user}" ] && _server_args="${_server_args} -user ${irken_h2d_server_user}"
 [ -n "${irken_h2d_log}" ]  && _server_args="${_server_args} -log ${irken_h2d_log}"
 _server_args="${_server_args} ${irken_h2d_args} ${irken_h2d_addr}"
 

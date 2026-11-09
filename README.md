@@ -24,7 +24,7 @@ Privileges
 ----------
 
 Start the server as root (it binds ports 80 and 443), with -user <name>
-(irken_h2d_user in rc.conf): once the ports are bound and the log file
+(irken_h2d_server_user in rc.conf): once the ports are bound and the log file
 and certificates read, it becomes that user, with that user's groups
 only, and there's no way back to root.  The certificate, key and users
 file must then be readable by that user, for SIGHUP reloads.
