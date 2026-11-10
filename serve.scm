@@ -62,6 +62,7 @@
           (let ((sock (tls13/make-channel sockfun creds.x509s creds.skey alpns)))
             (note-event stat (conn-event:tls-good (sock.get-info)))
             (try
+            (try
              ;; create and invoke h2 read-frames loop.  each request is
              ;;  recorded against this connection's entry (not looked up by
              ;;  address: another connection may share it, e.g. one to
@@ -86,6 +87,14 @@
              (:OSError n)
              -> (note-event stat (conn-event:os-error (strerror n)))
              )
+             except
+             ;; anything else: close the socket (don't leak the fd), then
+             ;;  let it go on to be logged as an unhandled exception.
+             EXN -> (begin
+                      (note-event stat (conn-event:os-error "exception (see log)"))
+                      (sock.set-closed)
+                      (sock.close)
+                      (raise EXN)))
             (sock.set-closed)
             (sock.close))
           except
