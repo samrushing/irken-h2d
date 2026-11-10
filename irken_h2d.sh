@@ -41,7 +41,8 @@
 #                            Default 5. Set to "" to disable auto-restart.
 #
 # "service irken_h2d reload" sends SIGHUP, which makes the server re-read
-# its certificate and key without dropping connections.
+# its certificate and key without dropping connections, and reopen its
+# access log (for newsyslog: see README.md).
 
 . /etc/rc.subr
 
@@ -90,7 +91,8 @@ command_args="-P ${pidfile} -p ${childpidfile} ${_restart_args} \
 required_files="${irken_h2d_binary} ${irken_h2d_cert} ${irken_h2d_key}"
 required_dirs="${irken_h2d_root} ${irken_h2d_acme}"
 
-# "reload": SIGHUP makes the server re-read its cert and key.
+# "reload": SIGHUP makes the server re-read its cert and key, and reopen
+# its access log.
 # Signal the server (child) itself, not daemon(8): the supervisor
 # doesn't forward SIGHUP.
 extra_commands="reload"

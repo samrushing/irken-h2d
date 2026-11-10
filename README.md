@@ -40,6 +40,19 @@ Under daemon(8), the server's output goes to syslog.  It logs only
 startup, SIGHUP reloads and errors, as plain lines; -d adds the
 (colorful) per-connection debugging output.
 
+The access log (-log, default /var/log/irken-httpd.log) is written by
+the server itself, so to rotate it newsyslog renames it and sends
+SIGHUP, and the server reopens it.  Since the server is no longer root
+by then, newsyslog must create the new file owned by the server's
+user.  In /etc/newsyslog.conf.d/irken-h2d.conf (daily at midnight,
+keep 7, bzip2'd):
+
+    /var/log/irken-httpd.log  www:www  644  7  *  @T00  JC  /var/run/irken_h2d.child.pid
+
+(the child pid file is the server's own pid; /var/run/irken_h2d.pid is
+daemon(8)'s, and daemon doesn't pass SIGHUP on.)  If the server can't
+reopen the log, it logs why and keeps writing to the old file.
+
 Certificates
 ------------
 

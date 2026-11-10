@@ -173,12 +173,27 @@
         (raise (:Serve/BadCreds (format key " is not the key for " cert))))
       {x509s=x509s skey=skey})))
 
-;; on SIGHUP, reload <cert> and <key> into <creds>: new connections use
-;;  them, existing ones carry on.  if they can't be loaded, keep the old.
-;; on SIGHUP, reload <cert> and <key> into <creds>: new connections use
-;;  them, existing ones carry on.  if they can't be loaded, keep the old.
-(define (reload-on-sighup creds cert key)
+;; on SIGHUP, reopen the access log <log>, and reload <cert> and <key>
+;;  into <creds>: new connections use them, existing ones carry on.  if
+;;  they can't be loaded, keep the old.
+(define (reload-on-sighup creds cert key log)
+  ;; reopen the access log, for log rotation: newsyslog renames it and
+  ;;  sends SIGHUP.  we may no longer be root, so newsyslog should create
+  ;;  the new file owned by us (see README); if it can't be opened, keep
+  ;;  writing to the old one.
+  (define (reopen-log)
+    (try
+     (let ((new (file/open-append log #o644)))
+       (when-maybe old *logfile*
+         (file/flush old)
+         (file/close old)
+         #u)
+       (set! *logfile* (maybe:yes new))
+       (logf "SIGHUP: reopened " log))
+     except
+     (:OSError n) -> (logf "SIGHUP: can't reopen " log ": " (strerror n) ": keeping the old one")))
   (define (reload)
+    (reopen-log)
     (try
      (let ((new (load-creds cert key)))
        (set! creds.x509s new.x509s)
@@ -365,7 +380,7 @@
            (:Posix/StillRoot _) -> (begin (logf "still root after becoming " name) (%exit #f 1))))
         (when-maybe sock http-sock
           (poller/fork (lambda () (serve-redirect sock acme-dir))))
-        (reload-on-sighup creds cert key)
+        (reload-on-sighup creds cert key log)
         (serve main-sock (h2-channel handler creds '("h2"))))
       (poller/wait-and-schedule))))
 
