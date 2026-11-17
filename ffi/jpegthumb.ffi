@@ -13,5 +13,5 @@
                     else "-L/usr/local/lib photos/jpegthumb.c -ljpeg"))
  (constants)
  (structs)
- (sigs jt_open jt_step jt_size jt_copy jt_error jt_close)
+ (sigs jt_open jt_open_range jt_step jt_size jt_copy jt_error jt_close)
  )

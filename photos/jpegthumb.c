@@ -23,6 +23,8 @@
 //  all go when its objects are destroyed.
 //
 //   h = jt_open (path, target)  never NULL unless out of memory
+//   h = jt_open_range (path, offset, length, target)
+//                               a JPEG inside another file (a raw's preview)
 //   jt_step (h, nrows)          1: more to do, 0: done, -1: failed (jt_error)
 //   jt_size (h), jt_copy (h, dst)  the JPEG, once jt_step returns 0
 //   jt_close (h)
@@ -54,6 +56,7 @@ typedef struct {
   unsigned char *buf;
   size_t cap;
   long skip;             // bytes to skip before the next read
+  long left;             // bytes left in the range (-1: to the end)
   int eof;
   unsigned char eoi[2];  // a fake EOI, for a file that ends early
 } jt_source;
@@ -151,9 +154,19 @@ src_feed (jt_source *s)
     if (fseek (s->in, s->skip, SEEK_CUR) != 0) {
       s->eof = 1;
     }
+    if (s->left >= 0) {
+      s->left = (s->skip >= s->left) ? 0 : s->left - s->skip;
+    }
     s->skip = 0;
   }
-  size_t n = s->eof ? 0 : fread (s->buf + kept, 1, JT_CHUNK, s->in);
+  size_t want = JT_CHUNK;
+  if (s->left >= 0 && (long) want > s->left) {
+    want = (size_t) s->left;
+  }
+  size_t n = (s->eof || want == 0) ? 0 : fread (s->buf + kept, 1, want, s->in);
+  if (s->left >= 0) {
+    s->left -= (long) n;
+  }
   if (n == 0) {
     s->eof = 1;
   }
@@ -221,14 +234,26 @@ jt_fail (jt *h, j_common_ptr cinfo)
 void *
 jt_open (char *path, int target)
 {
+  return jt_open_range (path, 0, -1, target);
+}
+
+// the JPEG in path[offset:offset+length] (length -1: to the end).
+void *
+jt_open_range (char *path, long offset, long length, int target)
+{
   jt *h = calloc (1, sizeof (jt));
   if (!h) {
     return NULL;
   }
   h->target = target;
   h->state = JT_HEADER;
+  h->src.left = length;
   if (!(h->src.in = fopen (path, "rb"))) {
     jt_fail_with (h, "can't open the file");
+    return h;
+  }
+  if (offset > 0 && fseek (h->src.in, offset, SEEK_SET) != 0) {
+    jt_fail_with (h, "can't seek in the file");
     return h;
   }
   h->d.err = jpeg_std_error (&h->derr.pub);

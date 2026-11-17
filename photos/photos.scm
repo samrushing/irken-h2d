@@ -5,9 +5,10 @@
 ;;   /b/<dir>/     a page of thumbnails for <dir>, with a viewer and slideshow
 ;;   /t/<file>     a thumbnail: a JPEG's EXIF thumbnail (with its
 ;;                 orientation), or else the JPEG decoded at 1/8 scale
-;;                 (photos/jpegscale.scm); a HEIC's thumbnail item; or
-;;                 else the file
-;;   /i/<file>     the file itself
+;;                 (photos/jpegscale.scm); a HEIC's thumbnail item; a raw
+;;                 file's smallest JPEG preview (photos/raw.scm); or else
+;;                 the file
+;;   /i/<file>     the file itself (a raw file: its biggest preview)
 ;;   /x/<file>     what we know about the file, as JSON
 ;;
 ;; a directory is listed when it's asked for, and JPEG thumbnails are
@@ -21,6 +22,7 @@
 (require "photos/exif.scm")
 (require "photos/heif.scm")
 (require "photos/jpegscale.scm")
+(require "photos/raw.scm")
 (require "photos/page.scm")
 (require "lib/codecs/hex.scm")
 
@@ -37,7 +39,8 @@
 (define (heif-extension? ext) (member? ext '("heic" "heif") string=?))
 
 (define image-extensions
-  '("jpg" "jpeg" "jpe" "heic" "heif" "png" "gif" "webp" "avif"))
+  (append '("jpg" "jpeg" "jpe" "heic" "heif" "png" "gif" "webp" "avif")
+          raw-extensions))
 
 (define (image-name? name)
   (member? (extension name) image-extensions string=?))
@@ -223,7 +226,42 @@
            (match (heif/thumbnail path) with
              (maybe:yes data) -> (maybe:yes (:tuple "image/heic" data))
              (maybe:no) -> (maybe:no)))
+          ((raw-extension? ext)
+           (match (raw-thumbnail path info) with
+             (maybe:yes data) -> (maybe:yes (:tuple "image/jpeg" data))
+             (maybe:no) -> (maybe:no)))
           (else (maybe:no)))))
+
+;; a raw file's smallest preview, if it's small; if not (a NEF's only
+;;  preview is full-size), that scaled down.  only previews the shape of
+;;  the biggest: Sony's 160x120 thumbnails are 3:2 pictures with black
+;;  bars in a 4:3 box.
+(define (raw-thumbnail path info)
+  (define (same-shape? a b)
+    (let ((x (* a.width b.height))
+          (y (* b.width a.height)))
+      (<= (* 50 (abs (- x y))) x))) ;; within 2%
+  (try
+   (let ((r (raw/previews path))
+         (big (match (reverse r.previews) with (p . _) -> (maybe:yes p) () -> (maybe:no)))
+         (usable (match big with
+                   (maybe:yes b) -> (filter (lambda (p) (same-shape? p b)) r.previews)
+                   (maybe:no) -> (list:nil))))
+     (match usable with
+       () -> (maybe:no)
+       (small . _)
+       -> (if (<= (max small.width small.height) 640)
+              (maybe:yes (raw/read-jpeg path small r.orientation))
+              (cached-thumbnail
+               path info
+               (lambda ()
+                 (match (jpeg/scaled-range path small.offset small.length 320) with
+                   (maybe:yes data)
+                   -> (maybe:yes (if (= r.orientation 1) data (jpeg/with-orientation data r.orientation)))
+                   (maybe:no) -> (maybe:no)))))))
+   except
+   (:Exif/Bad _) -> (maybe:no)
+   (:OSError _) -> (maybe:no)))
 
 ;; --------------------------------------------------------------------------------
 ;; HEIC, for browsers that can't show it (all but Safari): converted to
@@ -308,7 +346,47 @@
                   #t (maybe:yes (:tuple offset bytes)) -> (send-patched-file request path info offset bytes)
                   _ _ -> (send-file request path info))
              (maybe:no) -> (send-file request path info)))
+          ((raw-extension? ext)
+           (send-raw-preview request path info))
           (else (send-file request path info)))))
+
+;; a raw file's biggest preview, with its orientation.  (never the raw
+;;  file itself: the browser can't show it.)
+(define (send-raw-preview request path info)
+  (match (try
+          (maybe:yes (raw/previews path))
+          except
+          (:Exif/Bad _) -> (maybe:no)) with
+    (maybe:yes r)
+    -> (match (reverse r.previews) with
+         (big . _) -> (send-range request path info big.offset big.length (raw/orientation-app1 r.orientation))
+         () -> (send-404 request))
+    (maybe:no) -> (send-404 request)))
+
+;; the JPEG at path[offset:offset+length], with <app1> (or "") put in
+;;  after its SOI.
+(define (send-range request path info offset length app1)
+  (let ((etag (format "W/\"" (int info.mtime) "." (int info.size) ".p\"")))
+    (if (etag-matches? request etag)
+        (request.send-headers "304" (list (:tuple "etag" etag) cache-control) #f)
+        (let ((fd (open path O_RDONLY 0)))
+          (request.send-headers "200"
+                                (list (:tuple "content-type" "image/jpeg")
+                                      (:tuple "content-length" (int->string (+ length (string-length app1))))
+                                      (:tuple "etag" etag)
+                                      cache-control)
+                                #t)
+          (request.send-with-generator
+           (makegen emit
+             (emit (string-append "\xff\xd8" app1))
+             (let loop ((pos (+ offset 2)) (left (- length 2)))
+               (when (> left 0)
+                 (let ((buf (pread fd (min left 16384) pos)))
+                   (when (> (string-length buf) 0)
+                     (emit buf)
+                     (loop (+ pos (string-length buf)) (- left (string-length buf)))))))
+             (close fd)
+             #u))))))
 
 ;; the file, with s[offset:offset+len(bytes)] replaced by <bytes>.
 (define (patched-file-generator path offset bytes)
@@ -349,17 +427,22 @@
 
 ;; a JPEG with no EXIF thumbnail, scaled down (and kept, with -cache).
 (define (scaled-thumbnail path info)
-  (define (make)
-    (match (jpeg/scaled path 320) with
-      (maybe:yes data)
-      -> (maybe:yes
-          (match (jpeg/read-exif path) with
-            (maybe:yes exif)
-            -> (if (or (= exif.orientation 1) exif.stale)
-                   data
-                   (jpeg/with-orientation data exif.orientation))
-            (maybe:no) -> data))
-      (maybe:no) -> (maybe:no)))
+  (cached-thumbnail
+   path info
+   (lambda ()
+     (match (jpeg/scaled path 320) with
+       (maybe:yes data)
+       -> (maybe:yes
+           (match (jpeg/read-exif path) with
+             (maybe:yes exif)
+             -> (if (or (= exif.orientation 1) exif.stale)
+                    data
+                    (jpeg/with-orientation data exif.orientation))
+             (maybe:no) -> data))
+       (maybe:no) -> (maybe:no)))))
+
+;; (make) makes a thumbnail: with -cache, it's kept.
+(define (cached-thumbnail path info make)
   (if (not (caching?))
       (make)
       (let ((cached (format (cache-name path info "-s") ".jpg")))
@@ -393,12 +476,29 @@
                                      #t)
                (request.send-data data #t))
           ;; no thumbnail: the browser will have to shrink the image.
-          (maybe:no) -> (send-file request path info)))))
+          ;;  (not a raw file, which it can't show.)
+          (maybe:no) -> (if (raw-extension? (extension path))
+                            (send-404 request)
+                            (send-file request path info))))))
+
+;; a raw file's EXIF (it's TIFF: IFD0 is at the start), with the size of
+;;  its biggest preview if EXIF doesn't say.
+(define (raw-exif path)
+  (try
+   (let ((exif (exif/parse (read-head path 65536) 0)))
+     (when (= exif.width 0)
+       (match (let ((r (raw/previews path))) (reverse r.previews)) with
+         (big . _) -> (begin (set! exif.width big.width) (set! exif.height big.height))
+         () -> #u))
+     (maybe:yes exif))
+   except
+   (:Exif/Bad _) -> (maybe:no)))
 
 (define (send-info request path info)
   (let ((ext (extension path))
         (mexif (cond ((jpeg-extension? ext) (jpeg/read-exif path))
                      ((heif-extension? ext) (heif/read-exif path))
+                     ((raw-extension? ext) (raw-exif path))
                      (else (maybe:no))))
         (exif (match mexif with (maybe:yes e) -> e (maybe:no) -> (exif/empty)))
         (has-thumb (match exif.thumb with (maybe:yes _) -> #t (maybe:no) -> #f)))

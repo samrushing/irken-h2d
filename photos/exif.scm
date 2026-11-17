@@ -249,6 +249,13 @@
 
 ;; the size of the image in a JPEG, from its SOF segment.
 (define (jpeg/frame-size s)
+  (match (jpeg/frame s) with
+    (maybe:yes f) -> (maybe:yes (:tuple f.width f.height))
+    (maybe:no) -> (maybe:no)))
+
+;; a JPEG's SOF segment: which kind (0 baseline, 1 extended, 2
+;;  progressive, 3 lossless...), and the size.
+(define (jpeg/frame s)
   (try
    (let loop ((pos 2))
      (if (> (+ pos 9) (string-length s))
@@ -259,7 +266,7 @@
                  ((or (= m #xda) (= m #xd9)) (maybe:no))
                  ;; SOF0..15, except DHT (c4), JPG (c8) and DAC (cc).
                  ((and (>= m #xc0) (<= m #xcf) (not (member? m '(#xc4 #xc8 #xcc) =)))
-                  (maybe:yes (:tuple (bytes/be16 s (+ pos 7)) (bytes/be16 s (+ pos 5)))))
+                  (maybe:yes {sof=(- m #xc0) width=(bytes/be16 s (+ pos 7)) height=(bytes/be16 s (+ pos 5))}))
                  (else (loop (+ pos 2 (bytes/be16 s (+ pos 2)))))))))
    except
    (:Exif/Bad _) -> (maybe:no)))

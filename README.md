@@ -102,6 +102,12 @@ suspension, and other connections get their turn in between, so a
 directory of big scans doesn't hold the server up.  With -cache, the
 results are kept.
 
+Raw files that are TIFF inside (NEF, ARW, CR2, DNG) are shown by the
+JPEG previews the camera put in them (photos/raw.scm): the smallest
+that's the right shape as the thumbnail (scaled, if it's big: a NEF's
+is full-size), and the biggest in the viewer.  The raw data itself is
+never sent.  (Not yet: CR3, which is ISOBMFF like HEIC; ORF, RW2.)
+
 Browsers other than Safari can't show HEIC: with -cache <dir>, HEIC
 thumbnails and images are converted to JPEG with libheif's heif-dec
 (-heif-dec <command>; called as `<command> -q 85 in.heic out.jpg`), and
@@ -109,9 +115,11 @@ the results kept in <dir>, which can be emptied at any time.  Without
 -cache, HEICs are sent as they are.
 
 The links at the top right, and [ and ], go to the directories before
-and after this one.  In the viewer: arrows (or click/swipe) move, space starts and stops the
-slideshow, i shows the date, camera and size, f is full screen, and
-escape goes back to the thumbnails.  The URL's #name links to an image.
+and after this one.  In the viewer: arrows (or click/swipe) move, space
+starts and stops the slideshow, i shows the date, camera and size, f is
+full screen, the globe (or m) shows a photo with a location on Google
+Maps, and escape goes back to the thumbnails.  The URL's #name links to
+an image.
 
 JPEGs whose pixels were rotated by a tool that left the EXIF orientation
 alone (the frame is the other way round from PixelX/YDimension) are

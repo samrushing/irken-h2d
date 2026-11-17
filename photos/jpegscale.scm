@@ -16,7 +16,12 @@
 ;; a JPEG whose long side is at least <target> pixels (if the image is
 ;;  that big), made from the JPEG at <path>.
 (define (jpeg/scaled path target)
-  (let ((h (jpegthumb/jt_open (cstring path) target)))
+  (jpeg/scaled-range path 0 -1 target))
+
+;; the same, for the JPEG at path[offset:offset+length] (length -1: to
+;;  the end), e.g. a raw file's preview.
+(define (jpeg/scaled-range path offset length target)
+  (let ((h (jpegthumb/jt_open_range (cstring path) offset length target)))
     (if (cref-null? h)
         (maybe:no) ;; out of memory
         (let loop ()
