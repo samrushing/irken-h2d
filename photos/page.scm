@@ -14,7 +14,11 @@ body { margin: 0; background: #111; color: #ddd; font: 15px system-ui, sans-seri
 a { color: #8cf; text-decoration: none; }
 header { padding: 10px 14px; font-size: 18px; position: sticky; top: 0; background: #111e; z-index: 1; }
 header .sep { color: #666; margin: 0 6px; }
+header { display: flex; align-items: baseline; flex-wrap: wrap; }
 header .count { color: #888; font-size: 14px; margin-left: 12px; }
+header .sideways { margin-left: auto; font-size: 15px; display: flex; gap: 14px; }
+header .sideways a, header .sideways span { white-space: nowrap; }
+header .sideways span { color: #555; }
 #dirs { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 14px 10px; }
 #dirs a { background: #222; border: 1px solid #333; border-radius: 6px; padding: 6px 10px; }
 #dirs a:hover { background: #2c2c2c; }
@@ -58,6 +62,20 @@ header .count { color: #888; font-size: 14px; margin-left: 12px; }
   }
   if (P.images.length > 0)
     header.append(el('span', {className: 'count', textContent: P.images.length + ' images'}));
+
+  // sideways: the directories before and after this one in its parent.
+  const last = (path) => path.split('/').pop();
+  const dirURL = (path) => '/b/' + enc(path) + '/';
+  if (P.prev || P.next) {
+    const side = el('span', {className: 'sideways'});
+    side.append(P.prev ? el('a', {href: dirURL(P.prev), title: 'previous directory ([)', innerHTML: '&larr; '})
+                       : el('span', {innerHTML: '&larr;'}));
+    if (P.prev) side.lastChild.append(last(P.prev));
+    side.append(P.next ? el('a', {href: dirURL(P.next), title: 'next directory (])', textContent: last(P.next) + ' '})
+                       : el('span', {innerHTML: '&rarr;'}));
+    if (P.next) side.lastChild.insertAdjacentHTML('beforeend', '&rarr;');
+    header.append(side);
+  }
 
   for (const d of P.dirs)
     $('dirs').append(el('a', {href: '/b/' + enc(join(P.dir, d)) + '/', textContent: d}));
@@ -166,6 +184,8 @@ header .count { color: #888; font-size: 14px; margin-left: 12px; }
   document.onkeydown = (e) => {
     if (viewer.hidden) {
       if (e.key === 'Enter' && P.images.length) show(0);
+      else if (e.key === '[' && P.prev) location.href = dirURL(P.prev);
+      else if (e.key === ']' && P.next) location.href = dirURL(P.next);
       return;
     }
     switch (e.key) {

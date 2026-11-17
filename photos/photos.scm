@@ -158,13 +158,45 @@
              (if (not (isdir? dir))
                  (send-404 request)
                  (let (((dirs images) (list-directory dir))
+                       ((prev next) (sibling-dirs root rel))
                        (data (format "{\"dir\":" (json-string rel)
                                      ",\"dirs\":" (json-list dirs)
-                                     ",\"images\":" (json-list images) "}"))
+                                     ",\"images\":" (json-list images)
+                                     ",\"prev\":" (json-string prev)
+                                     ",\"next\":" (json-string next) "}"))
                        (title (if (string=? rel "") "photos" rel)))
                    (send-body request "200" "text/html; charset=utf-8"
                               (list (:tuple "cache-control" "no-cache"))
                               (photos/page title data))))))))
+
+;; the directories before and after <rel> in its parent (by name), as
+;;  paths like <rel>'s; "" where there isn't one.
+(define (sibling-dirs root rel)
+  (let ((parts (string-split rel #\/))
+        (n (length parts)))
+    (if (string=? rel "")
+        (:tuple "" "")
+        (let ((parent (string-join (take parts (- n 1)) "/"))
+              (name (last parts))
+              ((dirs _) (try
+                         (list-directory (root-path root parent))
+                         except
+                         (:OSError _) -> (:tuple (list:nil) (list:nil))))
+              (prev "")
+              (next ""))
+          (define (path-of d) (if (string=? parent "") d (format parent "/" d)))
+          (let loop ((dirs dirs) (before (maybe:no)))
+            (match dirs with
+              () -> #u
+              (d . tl)
+              -> (if (string=? d name)
+                     (begin
+                       (when-maybe b before (set! prev (path-of b)))
+                       (match tl with
+                         (nx . _) -> (set! next (path-of nx))
+                         () -> #u))
+                     (loop tl (maybe:yes d)))))
+          (:tuple prev next)))))
 
 ;; call (fun path stat) for the image file that <parts> names.
 (define (with-image request root parts fun)
