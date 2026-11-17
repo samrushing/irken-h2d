@@ -491,7 +491,7 @@
     (let ((creds (try
                   (load-creds cert key)
                   except
-                  (:Serve/BadCreds why) -> (begin (printf why "\n") (%exit #f 1))))
+                  (:Serve/BadCreds why) -> (startup-failed why)))
           ((ip port) (split-addr addr))
           ;; /status/ (which can shut the server down) only with a login.
           (handlers (multi-handler
@@ -501,10 +501,15 @@
                     (match users with
                       (maybe:yes path) -> (basic-auth-wrapper (load-users path) "photos" "/" handlers)
                       (maybe:no) -> (begin (logf "-open: no login needed") handlers)))))
-      (set! *logfile* (maybe:yes (file/open-append log #o644)))
+      (set! *logfile* (maybe:yes (open-log log)))
       (logf "serving " root)
       (if (convert-heif?)
-          (begin (make-cache-dirs) (logf "converting HEIC with " *heif-dec* ", into " *cache*))
+          (begin
+            (make-cache-dirs)
+            (logf "converting HEIC with " *heif-dec* ", into " *cache*)
+            ;; (under rc(8), PATH may not have /usr/local/bin in it.)
+            (when (not (= 0 (system (format "command -v " (sh-quote (first (string-split *heif-dec* #\space))) " >/dev/null"))))
+              (logf "warning: can't find " *heif-dec* ": HEIC won't be converted (give -heif-dec a full path?)")))
           (logf "no -cache: HEIC images are sent as they are (only Safari can show them)"))
       (let ((sock (listen-on ip port)))
         (logf "listening on " addr)

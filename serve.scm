@@ -97,7 +97,7 @@
     (let ((creds (try
                   (load-creds cert key)
                   except
-                  (:Serve/BadCreds why) -> (begin (printf why "\n") (%exit #f 1))))
+                  (:Serve/BadCreds why) -> (startup-failed why)))
           ((ip port) (split-addr addr))
           (status (match users with
                     (maybe:yes path)
@@ -111,7 +111,7 @@
                                    (host-handler root))))))
           ;;(handler (h2-handler (host-handler root)))
           )
-      (set! *logfile* (maybe:yes (file/open-append log #o644)))
+      (set! *logfile* (maybe:yes (open-log log)))
       (logf "read " (int (length creds.x509s)) " certs from " cert)
       (debugf "redirect? " (bool redirect?) "\n")
       (let ((main-sock (listen-on ip port))

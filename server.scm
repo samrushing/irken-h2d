@@ -102,10 +102,28 @@
 
 ;; a listening socket on <ip>:<port>.  (separate from the accept loops,
 ;;  so that privileged ports can be bound before dropping root.)
+;; --------------------------------------------------------------------------------
+;; startup errors: an errno alone (2!) doesn't say what went wrong, so
+;;  each step that opens something names it.
+
+(define (startup-failed what)
+  (logf what)
+  (%exit #f 1))
+
+;; open the log file <path> (for appending), or say why not and exit.
+(define (open-log path)
+  (try
+   (file/open-append path #o644)
+   except
+   (:OSError n) -> (startup-failed (format "can't open the log " path ": " (strerror n)))))
+
 (define (listen-on ip port)
   (let ((sock (doom/make (tcp4-sock)))
         (addr (address/make4 ip port)))
-    (sock.bind addr)
+    (try
+     (sock.bind addr)
+     except
+     (:OSError n) -> (startup-failed (format "can't listen on " (address/unparse addr) ": " (strerror n))))
     ;; a small backlog fails under a burst of connections: macOS (and
     ;;  FreeBSD) reset connections once the accept queue is full.
     (sock.listen SOMAXCONN)
@@ -157,13 +175,29 @@
   _ _ -> #f
   )
 
-;; the certificate chain and key, checking that they go together.
+;; read <path> with (read path), turning whatever can go wrong into
+;;  (:Serve/BadCreds why), with the path in <why>.
+(define (read-cred read path)
+  (try
+   (read path)
+   except
+   (:OSError n) -> (raise (:Serve/BadCreds (format "can't read " path ": " (strerror n))))
+   (:TLS/ExpectedCertificate _) -> (raise (:Serve/BadCreds (format path ": a PEM block that isn't a certificate")))
+   (:SIG/NoPEMFound _) -> (raise (:Serve/BadCreds (format path ": no key in it")))
+   (:SIG/UnexpectedPEM kind) -> (raise (:Serve/BadCreds (format path ": unexpected PEM block " kind)))))
+
+;; the certificate chain and key, checking that they go together.  any
+;;  problem raises (:Serve/BadCreds why).
 (define (load-creds cert key)
-  (let ((x509s (read-certs cert))
-        (skey (read-skey key)))
+  (let ((x509s (read-cred read-certs cert))
+        (skey (read-cred read-skey key)))
     (when (null? x509s)
       (raise (:Serve/BadCreds (format "no certificates in " cert))))
-    (let ((leaf (parse-x509 (first x509s))))
+    (let ((leaf (try
+                 (parse-x509 (first x509s))
+                 except
+                 (:X509/Unexpected what _) -> (raise (:Serve/BadCreds (format cert ": can't parse the certificate (" what ")")))
+                 (:X509/Unsupported what _) -> (raise (:Serve/BadCreds (format cert ": unsupported certificate (" what ")"))))))
       (when (not (key-matches? skey leaf.cert.pubkey.key))
         (raise (:Serve/BadCreds (format key " is not the key for " cert))))
       {x509s=x509s skey=skey})))
@@ -195,13 +229,7 @@
        (set! creds.skey new.skey)
        (logf "SIGHUP: reloaded " cert " (" (int (length new.x509s)) " certs) and " key))
      except
-     (:Serve/BadCreds why) -> (logf "SIGHUP: " why ": keeping the old ones")
-     (:OSError n) -> (logf "SIGHUP: " (strerror n) ": keeping the old ones")
-     (:TLS/ExpectedCertificate path) -> (logf "SIGHUP: unexpected PEM in " path ": keeping the old ones")
-     (:SIG/NoPEMFound path) -> (logf "SIGHUP: no key in " path ": keeping the old ones")
-     (:SIG/UnexpectedPEM kind) -> (logf "SIGHUP: unexpected PEM " kind ": keeping the old ones")
-     (:X509/Unexpected what _) -> (logf "SIGHUP: can't parse the certificate (" what "): keeping the old ones")
-     (:X509/Unsupported what _) -> (logf "SIGHUP: unsupported certificate (" what "): keeping the old ones")))
+     (:Serve/BadCreds why) -> (logf "SIGHUP: " why ": keeping the old ones")))
   (if poller/signals?
       (begin
         (signal/ignore SIGHUP)
@@ -214,7 +242,15 @@
       (logf "no SIGHUP reloading on this platform (yet)")))
 
 ;; -users: "name:password" lines; blank lines and #-comments are skipped.
+;; (a users file that can't be read stops the server: it's only read at
+;;  startup.)
 (define (load-users path)
+  (try
+   (load-users* path)
+   except
+   (:OSError n) -> (startup-failed (format "can't read the users file " path ": " (strerror n)))))
+
+(define (load-users* path)
   (let ((info (stat path))
         (users (tree/empty))
         (n 0))
