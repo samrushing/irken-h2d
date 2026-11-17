@@ -1,7 +1,7 @@
 ;; -*- Mode: Irken -*-
 
 ;; just enough EXIF for a photo browser: orientation, date, camera,
-;;  pixel size, and the embedded JPEG thumbnail (IFD1).  the TIFF
+;;  pixel size, location (GPS), and the embedded JPEG thumbnail (IFD1).  the TIFF
 ;;  structure comes from a JPEG's APP1 segment or a HEIF's Exif item
 ;;  (see heif.scm).
 ;;
@@ -57,9 +57,10 @@
 
 ;; orientation-fix: where the orientation is in the file, and the bytes
 ;;  that would make it 1 (see jpeg/stale-orientation?).
+;; gps: "<latitude>,<longitude>" in degrees, or "".
 (define (exif/empty)
   {orientation=1 date="" make="" model="" width=0 height=0 thumb=(maybe:no)
-   orientation-fix=(maybe:no) stale=#f})
+   orientation-fix=(maybe:no) stale=#f gps=""})
 
 ;; ASCII values are NUL-terminated, and often padded with spaces.
 (define (trim-ascii s)
@@ -113,6 +114,26 @@
       (let ((off (if (<= e.count 4) e.at (tiff/u32 t e.at))))
         (trim-ascii (bytes/sub t.s (+ t.base off) e.count)))))
 
+;; a GPS latitude or longitude: three RATIONALs (5), degrees, minutes
+;;  and seconds (often with the fraction in the minutes, and 0 seconds).
+;;  in millionths of a degree, since there are no floats.
+(define (tiff/degrees t e)
+  (if (or (not (= e.type 5)) (< e.count 3))
+      (maybe:no)
+      (let ((off (tiff/u32 t e.at)))
+        (define (part i div)
+          (let ((num (tiff/u32 t (+ off (* 8 i))))
+                (den (tiff/u32 t (+ off (* 8 i) 4))))
+            (if (= den 0)
+                (raise (:Exif/Bad "GPS rational"))
+                (/ (* num 1000000) (* den div)))))
+        (maybe:yes (+ (part 0 1) (+ (part 1 60) (part 2 3600)))))))
+
+;; millionths of a degree, as a decimal.
+(define (micro->string n)
+  (let ((a (if (< n 0) (- 0 n) n)))
+    (format (if (< n 0) "-" "") (int (/ a 1000000)) "." (zpad 6 (int (mod a 1000000))))))
+
 ;; the EXIF in the TIFF structure at s[base:].
 (define (exif/parse s base)
   (let ((t (tiff/make s base))
@@ -125,6 +146,23 @@
               ((= e.tag #xa002) (set! info.width (tiff/int t e)))
               ((= e.tag #xa003) (set! info.height (tiff/int t e)))
               (else #u))))
+
+    ;; the GPS IFD: GPSLatitudeRef (N/S), GPSLatitude, GPSLongitudeRef
+    ;;  (E/W), GPSLongitude.  (0,0) is a phone that had no fix.
+    (define (gps-ifd off)
+      (let ((lat-ref "") (lon-ref "") (lat (maybe:no)) (lon (maybe:no)))
+        (for-list e (tiff/entries t off)
+          (cond ((= e.tag 1) (set! lat-ref (tiff/ascii t e)))
+                ((= e.tag 2) (set! lat (tiff/degrees t e)))
+                ((= e.tag 3) (set! lon-ref (tiff/ascii t e)))
+                ((= e.tag 4) (set! lon (tiff/degrees t e)))
+                (else #u)))
+        (match lat lon with
+          (maybe:yes a) (maybe:yes b)
+          -> (when (not (and (= a 0) (= b 0)))
+               (set! info.gps (format (micro->string (if (string=? lat-ref "S") (- 0 a) a)) ","
+                                      (micro->string (if (string=? lon-ref "W") (- 0 b) b)))))
+          _ _ -> #u)))
 
     ;; IFD1, the thumbnail's: JPEGInterchangeFormat{,Length}.
     (define (thumb-ifd off)
@@ -153,6 +191,8 @@
               ((= e.tag #x8769)
                ;; a bad sub-IFD shouldn't lose the rest.
                (try (exif-ifd (tiff/u32 t e.at)) except (:Exif/Bad _) -> #u))
+              ((= e.tag #x8825)
+               (try (gps-ifd (tiff/u32 t e.at)) except (:Exif/Bad _) -> #u))
               (else #u)))
       (when (or (< info.orientation 1) (> info.orientation 8))
         (set! info.orientation 1))

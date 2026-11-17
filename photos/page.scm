@@ -35,9 +35,10 @@ header .sideways span { color: #555; }
 #bar { position: fixed; left: 0; right: 0; bottom: 0; display: flex; gap: 6px; align-items: center;
        padding: 8px 12px; background: linear-gradient(transparent, #000c); transition: opacity 0.4s; }
 #bar.idle { opacity: 0; }
-#bar button, #bar select { background: #222c; color: #ddd; border: 1px solid #444; border-radius: 5px;
+#bar button, #bar select, #bar a { background: #222c; color: #ddd; border: 1px solid #444; border-radius: 5px;
        font-size: 16px; padding: 4px 10px; cursor: pointer; }
 #caption { flex: 1; text-align: center; color: #ccc; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#info a { color: #8cf; }
 #info { position: fixed; top: 10px; right: 10px; background: #000b; border: 1px solid #333;
         border-radius: 6px; padding: 8px 12px; font-size: 13px; line-height: 1.5; white-space: pre; }
 ")
@@ -112,7 +113,7 @@ header .sideways span { color: #555; }
     $('caption').textContent = name + '   ' + (index + 1) + ' / ' + n;
     viewer.hidden = false;
     history.replaceState(null, '', '#' + encodeURIComponent(name));
-    if (!info.hidden) loadInfo();
+    updateMeta(name);
     // fetch the next one now, so it's there when it's wanted.
     if (n > 1) el('img', {src: url('i', P.images[(index + 1) % n])});
     wake();
@@ -138,11 +139,35 @@ header .sideways span { color: #555; }
     if (index >= 0) cells[index].scrollIntoView({block: 'nearest'});
   }
 
+  // what /x/ says about each image (date, camera, location...), fetched
+  //  once.
+  const metas = new Map();
+  function meta(name) {
+    if (!metas.has(name))
+      metas.set(name, fetch(url('x', name)).then((r) => r.json()).catch(() => null));
+    return metas.get(name);
+  }
+  const mapURL = (gps) => 'https://www.google.com/maps/search/?api=1&query=' + gps;
+
+  // the globe button, if the image has a location; and the info panel.
+  function updateMeta(name) {
+    const map = $('map');
+    map.hidden = true;
+    meta(name).then((x) => {
+      if (P.images[index] !== name || !x) return;
+      if (x.gps) { map.href = mapURL(x.gps); map.hidden = false; }
+      if (!info.hidden) showInfo(name, x);
+    });
+  }
+
   function loadInfo() {
     const name = P.images[index];
     info.textContent = name;
-    fetch(url('x', name)).then((r) => r.json()).then((x) => {
-      if (P.images[index] !== name) return;
+    meta(name).then((x) => { if (P.images[index] === name && x) showInfo(name, x); });
+  }
+
+  function showInfo(name, x) {
+    {
       const lines = [name];
       if (x.date) lines.push(x.date);
       // (models often repeat the make: Canon Canon PowerShot S230)
@@ -152,7 +177,12 @@ header .sideways span { color: #555; }
       if (x.stale) lines.push('(orientation tag was stale: ignored)');
       lines.push((x.size / 1e6).toFixed(1) + ' MB');
       info.textContent = lines.join(String.fromCharCode(10));
-    });
+      if (x.gps) {
+        info.append(String.fromCharCode(10));
+        info.append(el('a', {href: mapURL(x.gps), target: '_blank', rel: 'noopener',
+                             textContent: x.gps.replace(',', ', ')}));
+      }
+    }
   }
 
   function toggleInfo() { info.hidden = !info.hidden; if (!info.hidden) loadInfo(); }
@@ -197,6 +227,7 @@ header .sideways span { color: #555; }
       case 'Escape': close(); break;
       case 'i': toggleInfo(); break;
       case 'f': fullscreen(); break;
+      case 'm': if (!$('map').hidden) window.open($('map').href, '_blank', 'noopener'); break;
       default: return;
     }
     e.preventDefault();
@@ -243,6 +274,7 @@ header .sideways span { color: #555; }
     </select>
     <button id='next' title='next (right arrow)'>&rarr;</button>
     <span id='caption'></span>
+    <a id='map' hidden target='_blank' rel='noopener' title='on Google Maps (m)'>&#x1F30D;</a>
     <button id='infob' title='info (i)'>i</button>
     <button id='fs' title='full screen (f)'>&#x26F6;</button>
     <button id='close' title='close (escape)'>&times;</button>

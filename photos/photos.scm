@@ -414,6 +414,7 @@
                        ",\"orientation\":" (int exif.orientation)
                        ",\"stale\":" (if exif.stale "true" "false")
                        ",\"thumb\":" (if has-thumb "true" "false")
+                       ",\"gps\":" (json-string exif.gps)
                        "}"))))
 
 ;; percent-encode a path segment (for redirects).
