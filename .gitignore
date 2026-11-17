@@ -13,3 +13,5 @@
 /t-decode-timestamp
 /t-lookup-month
 /photos/photos
+/ffi/*_ffi.scm
+!/photos/jpegthumb.c

@@ -4,7 +4,9 @@
 ;;
 ;;   /b/<dir>/     a page of thumbnails for <dir>, with a viewer and slideshow
 ;;   /t/<file>     a thumbnail: a JPEG's EXIF thumbnail (with its
-;;                 orientation), a HEIC's thumbnail item, or else the file
+;;                 orientation), or else the JPEG decoded at 1/8 scale
+;;                 (photos/jpegscale.scm); a HEIC's thumbnail item; or
+;;                 else the file
 ;;   /i/<file>     the file itself
 ;;   /x/<file>     what we know about the file, as JSON
 ;;
@@ -18,6 +20,7 @@
 (require "server.scm")
 (require "photos/exif.scm")
 (require "photos/heif.scm")
+(require "photos/jpegscale.scm")
 (require "photos/page.scm")
 (require "lib/codecs/hex.scm")
 
@@ -208,12 +211,14 @@
              (send-404 request)))
     (maybe:no) -> (send-404 request)))
 
-(define (thumbnail path)
+(define (thumbnail path info)
   (let ((ext (extension path)))
     (cond ((jpeg-extension? ext)
            (match (jpeg/thumbnail path) with
              (maybe:yes data) -> (maybe:yes (:tuple "image/jpeg" data))
-             (maybe:no) -> (maybe:no)))
+             (maybe:no) -> (match (scaled-thumbnail path info) with
+                             (maybe:yes data) -> (maybe:yes (:tuple "image/jpeg" data))
+                             (maybe:no) -> (maybe:no))))
           ((heif-extension? ext)
            (match (heif/thumbnail path) with
              (maybe:yes data) -> (maybe:yes (:tuple "image/heic" data))
@@ -229,7 +234,7 @@
 (define *cache* "")            ;; -cache <dir>: "" means don't convert.
 (define *heif-dec* "heif-dec") ;; -heif-dec <command>
 
-(define (convert-heif?) (not (string=? *cache* "")))
+(define (caching?) (not (string=? *cache* "")))
 
 ;; quoted for /bin/sh.
 (define (sh-quote s)
@@ -294,7 +299,7 @@
 
 (define (send-image request path info)
   (let ((ext (extension path)))
-    (cond ((and (convert-heif?) (heif-extension? ext))
+    (cond ((and (caching?) (heif-extension? ext))
            (send-converted request path info heif-full-jpeg))
           ((jpeg-extension? ext)
            (match (jpeg/read-exif path) with
@@ -338,15 +343,46 @@
           (request.send-with-generator (patched-file-generator path offset bytes))))))
 
 (define (send-thumbnail request path info)
-  (if (and (convert-heif?) (heif-extension? (extension path)))
+  (if (and (caching?) (heif-extension? (extension path)))
       (send-converted request path info heif-thumbnail-jpeg)
       (send-native-thumbnail request path info)))
 
+;; a JPEG with no EXIF thumbnail, scaled down (and kept, with -cache).
+(define (scaled-thumbnail path info)
+  (define (make)
+    (match (jpeg/scaled path 320) with
+      (maybe:yes data)
+      -> (maybe:yes
+          (match (jpeg/read-exif path) with
+            (maybe:yes exif)
+            -> (if (or (= exif.orientation 1) exif.stale)
+                   data
+                   (jpeg/with-orientation data exif.orientation))
+            (maybe:no) -> data))
+      (maybe:no) -> (maybe:no)))
+  (if (not (caching?))
+      (make)
+      (let ((cached (format (cache-name path info "-s") ".jpg")))
+        (if (isfile? cached)
+            (let ((cinfo (stat cached)))
+              (maybe:yes (read-at cached cinfo.size 0)))
+            (match (make) with
+              (maybe:yes data)
+              -> (begin
+                   ;; (nothing else runs while this is written: no other
+                   ;;  request can see half of it.)
+                   (write-file cached data)
+                   (maybe:yes data))
+              (maybe:no) -> (maybe:no))))))
+
+;; (the "t" keeps a browser from holding on to what it got from /t/
+;;  before there were scaled thumbnails: the whole file, with the file's
+;;  etag.)
 (define (send-native-thumbnail request path info)
-  (let ((etag (file-etag info)))
+  (let ((etag (format "W/\"" (int info.mtime) "." (int info.size) ".t\"")))
     (if (etag-matches? request etag)
         (request.send-headers "304" (list (:tuple "etag" etag) cache-control) #f)
-        (match (thumbnail path) with
+        (match (thumbnail path info) with
           (maybe:yes (:tuple type data))
           -> (begin
                (request.send-headers "200"
@@ -459,7 +495,7 @@
           "  [-open]          no login at all (only on a private network!)\n"
           "                   one of -users or -open is required.\n"
           "  [-cache <dir>]   convert HEIC to JPEG (for browsers other than Safari),\n"
-          "                   keeping the results here\n"
+          "                   and keep those and scaled-down JPEG thumbnails here\n"
           "  [-heif-dec = heif-dec]  the converter (libheif's), run as\n"
           "                   <command> -q 85 <in.heic> <out.jpg>\n"
           "  [-user <name>]   after binding the port, run as this user\n"
@@ -535,7 +571,7 @@
                       (maybe:no) -> (begin (logf "-open: no login needed") handlers)))))
       (set! *logfile* (maybe:yes (open-log log)))
       (logf "serving " root)
-      (if (convert-heif?)
+      (if (caching?)
           (begin
             (make-cache-dirs)
             (logf "converting HEIC with " *heif-dec* ", into " *cache*)

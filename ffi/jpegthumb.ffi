@@ -1,0 +1,17 @@
+;; -*- Mode: Irken -*-
+
+;; photos/jpegthumb.c: small JPEGs from big ones, with libjpeg(-turbo).
+;;  jpegthumb.c is compiled into the program.  generate the interface
+;;  (ffi/jpegthumb_ffi.scm) from the top of the tree:
+;;
+;;    $ IRKENLIB=<irken tree> <irken tree>/ffi/gen/genffi -gen ffi/jpegthumb.ffi
+
+(jpegthumb
+ (includes "photos/jpegthumb.h")
+ (cflags (%platform Darwin "-I/opt/homebrew/include -I." else "-I/usr/local/include -I."))
+ (lflags (%platform Darwin "-L/opt/homebrew/lib photos/jpegthumb.c -ljpeg"
+                    else "-L/usr/local/lib photos/jpegthumb.c -ljpeg"))
+ (constants)
+ (structs)
+ (sigs jt_open jt_step jt_size jt_copy jt_error jt_close)
+ )

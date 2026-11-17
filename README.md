@@ -82,6 +82,11 @@ straight out of the files (a JPEG's EXIF thumbnail, a HEIC's thumbnail
 item), so there's nothing to index and nothing to wait for; a viewer
 shows the full images, with a slideshow.
 
+It needs libjpeg (libjpeg-turbo: `pkg install libjpeg-turbo`), for
+JPEGs with no EXIF thumbnail.  Generate its interface once (and again
+after changing photos/jpegthumb.h), from the top of this tree:
+
+    $ IRKENLIB=<irken tree> <irken tree>/ffi/gen/genffi -gen ffi/jpegthumb.ffi
     $ irken photos/photos.scm
     $ photos/photos 0.0.0.0:8444 -root /photos -users photo-users \
         -cert ... -key ... -cache /var/cache/irken-photos
@@ -90,13 +95,21 @@ shows the full images, with a slideshow.
 everything (including /status/) needs a login; -open serves without
 one, for a private network only.  One or the other is required.
 
+JPEGs with no EXIF thumbnail (scans, mostly) are decoded at 1/8 scale
+(or 1/4, 1/2) by libjpeg, through a small C shim (photos/jpegthumb.c).
+The decode is done a chunk of the file at a time, with libjpeg's I/O
+suspension, and other connections get their turn in between, so a
+directory of big scans doesn't hold the server up.  With -cache, the
+results are kept.
+
 Browsers other than Safari can't show HEIC: with -cache <dir>, HEIC
 thumbnails and images are converted to JPEG with libheif's heif-dec
 (-heif-dec <command>; called as `<command> -q 85 in.heic out.jpg`), and
 the results kept in <dir>, which can be emptied at any time.  Without
 -cache, HEICs are sent as they are.
 
-In the viewer: arrows (or click/swipe) move, space starts and stops the
+The links at the top right, and [ and ], go to the directories before
+and after this one.  In the viewer: arrows (or click/swipe) move, space starts and stops the
 slideshow, i shows the date, camera and size, f is full screen, and
 escape goes back to the thumbnails.  The URL's #name links to an image.
 

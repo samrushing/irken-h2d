@@ -272,9 +272,13 @@
              (if (or (= info.orientation 1)
                      (jpeg/stale-orientation? info (jpeg/frame-size thumb)))
                  thumb
-                 (string-concat
-                  (list "\xff\xd8"
-                        (exif/orientation-app1 info.orientation)
-                        (substring thumb 2 (string-length thumb))))))
+                 (jpeg/with-orientation thumb info.orientation)))
          (maybe:no) -> (maybe:no))
     (maybe:no) -> (maybe:no)))
+
+;; <jpeg> (which has no EXIF), with an APP1 holding just <orientation>.
+(define (jpeg/with-orientation jpeg orientation)
+  (string-concat
+   (list "\xff\xd8"
+         (exif/orientation-app1 orientation)
+         (substring jpeg 2 (string-length jpeg)))))
