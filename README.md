@@ -72,3 +72,35 @@ it can renew while the server runs.  Daily from cron:
 irken-acme prints "wrote <cert>" only when it renews; "service
 irken_h2d reload" sends the server SIGHUP, which reloads its
 certificate and key.  See acme/README.txt.
+
+Photo browser
+-------------
+
+photos/photos.scm is a second server built on the same parts
+(server.scm): it browses a directory tree of photos.  Thumbnails come
+straight out of the files (a JPEG's EXIF thumbnail, a HEIC's thumbnail
+item), so there's nothing to index and nothing to wait for; a viewer
+shows the full images, with a slideshow.
+
+    $ irken photos/photos.scm
+    $ photos/photos 0.0.0.0:8444 -root /photos -users photo-users \
+        -cert ... -key ... -cache /var/cache/irken-photos
+
+-users is the same name:password file as for /status/, and then
+everything (including /status/) needs a login; -open serves without
+one, for a private network only.  One or the other is required.
+
+Browsers other than Safari can't show HEIC: with -cache <dir>, HEIC
+thumbnails and images are converted to JPEG with libheif's heif-dec
+(-heif-dec <command>; called as `<command> -q 85 in.heic out.jpg`), and
+the results kept in <dir>, which can be emptied at any time.  Without
+-cache, HEICs are sent as they are.
+
+In the viewer: arrows (or click/swipe) move, space starts and stops the
+slideshow, i shows the date, camera and size, f is full screen, and
+escape goes back to the thumbnails.  The URL's #name links to an image.
+
+JPEGs whose pixels were rotated by a tool that left the EXIF orientation
+alone (the frame is the other way round from PixelX/YDimension) are
+sent with the orientation set to 1, so that browsers don't turn them a
+second time.
