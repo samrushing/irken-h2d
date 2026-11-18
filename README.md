@@ -125,3 +125,24 @@ JPEGs whose pixels were rotated by a tool that left the EXIF orientation
 alone (the frame is the other way round from PixelX/YDimension) are
 sent with the orientation set to 1, so that browsers don't turn them a
 second time.
+
+Source browser
+--------------
+
+source/source.scm, built on the same parts, browses a tree of Irken
+source: directory listings, and files with line numbers (#L<n> links
+to a line).  Irken files (.scm) are highlighted the way irken.el does
+it (source/highlight.scm): keywords, the names being defined,
+constructors, ->, comments, strings, characters, numbers.  Each
+top-level definition has an anchor, and the uses of its name in the
+file link to it; the file's definitions are listed at the top.
+(require "...") links to the file, looked for in the directories above
+the file's (the compiler resolves requires from where it's run, usually
+the top of the project), and then in the -lib directories.  Other text
+files are shown as they are; /r/<file> is the file itself.
+
+    $ irken source/source.scm
+    $ source/source 0.0.0.0:8445 -root ~/src/irken -lib claude/irken-compiler -open
+
+-users and -open are as for the photo browser.
+
