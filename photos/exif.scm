@@ -38,20 +38,6 @@
 (define (bytes/u32->string n)
   (string-append (bytes/u16->string (>> n 16)) (bytes/u16->string n)))
 
-;; the first <n> bytes of the file at <path> (fewer if it's shorter).
-(define (read-head path n)
-  (read-at path n 0))
-
-;; <n> bytes at <offset> in the file at <path>.
-(define (read-at path n offset)
-  (let ((fd (open path O_RDONLY 0)))
-    (try
-     (let ((r (pread fd n offset)))
-       (close fd)
-       r)
-     except
-     EXN -> (begin (close fd) (raise EXN)))))
-
 ;; --------------------------------------------------------------------------------
 ;; TIFF/EXIF
 

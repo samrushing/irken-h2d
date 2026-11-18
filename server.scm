@@ -280,3 +280,47 @@
 
 (define *start-time* (gettime/realtime))
 
+;; --------------------------------------------------------------------------------
+;; the startup of a server on one port, behind a login: the photo and
+;;  source browsers.
+
+;; "ip:port" (or just "ip", for 443).
+(define (parse-addr addr)
+  (match (string-split addr #\:) with
+    (ip port) -> (:tuple ip (string->int port))
+    (ip)      -> (:tuple ip 443)
+    _         -> (startup-failed (format "bad address: " addr))))
+
+;; serve <app> (a handler) on <addr>.  everything is behind a login if
+;;  <users> (a users file) is given, and /status/ (which can shut the
+;;  server down) is there only then.  <realm> names the login.  (setup)
+;;  is called once the log is open, before listening.
+(define (run-server addr opts cert key log user users realm app setup)
+  (let ((creds (try
+                (load-creds cert key)
+                except
+                (:Serve/BadCreds why) -> (startup-failed why)))
+        ((ip port) (parse-addr addr))
+        (handlers (multi-handler
+                   (append (if (eq? users (maybe:no)) (list:nil) (list (status-handler addr opts)))
+                           (list favicon-handler app))))
+        (handler (h2-handler
+                  (match users with
+                    (maybe:yes path) -> (basic-auth-wrapper (load-users path) realm "/" handlers)
+                    (maybe:no) -> (begin (logf "-open: no login needed") handlers)))))
+    (set! *logfile* (maybe:yes (open-log log)))
+    (setup)
+    (let ((sock (listen-on ip port)))
+      (logf "listening on " addr)
+      (when-maybe name user
+        (try
+         (begin
+           (drop-privileges name)
+           (logf "running as " name))
+         except
+         (:OSError e) -> (startup-failed (format "can't run as " name ": " (strerror e)))
+         (:Posix/NoSuchUser _) -> (startup-failed (format "no such user: " name))
+         (:Posix/StillRoot _) -> (startup-failed (format "still root after becoming " name))))
+      (reload-on-sighup creds cert key log)
+      (serve sock (h2-channel handler creds '("h2"))))
+    (poller/wait-and-schedule)))
