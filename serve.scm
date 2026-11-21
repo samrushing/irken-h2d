@@ -3,6 +3,7 @@
 ;; irken-h2d: an HTTP/2 file server.
 
 (require "server.scm")
+(require "x402/handler.scm")
 
 (define program-options
   (makeopt
@@ -13,6 +14,7 @@
    (arg 'acme (string ""))
    (arg 'users (string ""))
    (arg 'user (string ""))
+   (arg 'x402 (string ""))
    (flag 'd)
    (arg 'http (int 80))
    (flag 'r)
@@ -44,6 +46,7 @@
           "  [-users <file>] users for /status (basic auth): name:password lines.\n"
           "     without it, /status is disabled.\n"
           "  [-user <name>] after binding the ports, run as this user\n"
+          "  [-x402 <file>] charge for paths with x402 payments: see x402/README.md\n"
           "     (start as root to bind ports 80 and 443)\n"
           "  [-d] print debugging output\n"
           "  [-h] print this usage.\n"
@@ -76,7 +79,8 @@
         (http-port 80)
         (log  "/var/log/irken-httpd.log")
         (users (maybe:no))
-        (user (maybe:no)))
+        (user (maybe:no))
+        (x402 (maybe:no)))
     (when-maybe v (get-bool-opt opts 'h) (usage))
     (when-maybe v (get-bool-opt opts 'r) (set! redirect? #f))
     (when-maybe v (get-string-opt opts 'root) (set! root v))
@@ -88,6 +92,7 @@
     (when-maybe v (get-int-opt opts 'http) (set! http-port v))
     (when-maybe v (get-string-opt opts 'users) (when (> (string-length v) 0) (set! users (maybe:yes v))))
     (when-maybe v (get-string-opt opts 'user) (when (> (string-length v) 0) (set! user (maybe:yes v))))
+    (when-maybe v (get-string-opt opts 'x402) (when (> (string-length v) 0) (set! x402 (maybe:yes v))))
     (set! *debugf* #f)
     (when-maybe v (get-bool-opt opts 'd) (set! *debugf* v))
     ;; the runtime's GC messages (on stderr, so also in syslog) too.
@@ -104,11 +109,24 @@
                     -> (list (basic-auth-wrapper (load-users path) "status" "/status" (status-handler addr opts)))
                     (maybe:no)
                     -> (begin (logf "no -users: /status is disabled") (list:nil))))
+          ;; the site, behind x402 payments for the priced paths if -x402.
+          (site (let ((files (host-handler root)))
+                  (match x402 with
+                    (maybe:yes path)
+                    -> (let ((config (try
+                                      (x402/load-config path)
+                                      except
+                                      (:X402/BadConfig why) -> (startup-failed (format path ": " why)))))
+                         (logf "x402: " (int (length config.prices)) " prices from " path
+                               ", paid to " config.terms.pay-to " on " config.terms.network
+                               ", settled by " config.settler.name)
+                         (multi-handler (list (x402-wrapper config files) files)))
+                    (maybe:no) -> files)))
           (handler (h2-handler
                     (multi-handler
                      (append status
                              (list favicon-handler
-                                   (host-handler root))))))
+                                   site)))))
           ;;(handler (h2-handler (host-handler root)))
           )
       (set! *logfile* (maybe:yes (open-log log)))
