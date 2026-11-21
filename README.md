@@ -53,6 +53,13 @@ keep 7, bzip2'd):
 daemon(8)'s, and daemon doesn't pass SIGHUP on.)  If the server can't
 reopen the log, it logs why and keeps writing to the old file.
 
+x402 payments
+-------------
+
+With -x402 <file>, the server charges for priced paths with x402
+(HTTP 402 Payment Required, paid in e.g. USDC), verified and settled
+by a facilitator.  See x402/README.md.
+
 Certificates
 ------------
 

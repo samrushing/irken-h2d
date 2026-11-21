@@ -1,0 +1,24 @@
+# x402 payments for irken-h2d: serve -x402 <this file>.  see x402/README.md.
+
+# who verifies and settles payments.  x402.org's facilitator is for
+#   testnets.  (one that needs an API key isn't supported yet.)
+facilitator     https://x402.org/facilitator
+# facilitator-root /path/to/cert.pem   # trust only this, instead of the system's roots
+
+# the network (CAIP-2) and token: here, USDC on Base Sepolia.
+network         eip155:84532
+asset           0x036CbD53842c5426634e7929541eC2318f3dCF7e
+asset-name      USDC
+asset-version   2
+
+# your address: payments go straight here.  the server holds no key.
+pay-to          0x0000000000000000000000000000000000000000
+
+# seconds a client has to complete a payment.
+max-timeout     60
+
+# price <path prefix> <amount in atomic units> <description>
+#   USDC has 6 decimals: 10000 is 0.01 USDC.  the longest prefix wins,
+#   for every host the server serves.
+price /premium/        10000   premium articles
+price /premium/big/    250000  the big ones
