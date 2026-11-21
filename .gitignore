@@ -16,3 +16,6 @@
 /ffi/*_ffi.scm
 !/photos/jpegthumb.c
 /source/source
+
+# x402 tests
+/x402/t-x402
