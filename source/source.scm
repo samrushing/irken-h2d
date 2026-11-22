@@ -258,6 +258,7 @@ pre .d { color: #dcdcaa; font-weight: 600; }
    (arg 'key  (string "key.pem"))
    (arg 'log  (string "/var/log/irken-source.log"))
    (arg 'users (string ""))
+   (arg 'passkeys (string ""))
    (arg 'user (string ""))
    (flag 'open)
    (flag 'd)
@@ -275,8 +276,9 @@ pre .d { color: #dcdcaa; font-weight: 600; }
           "  [-key = key.pem]\n"
           "  [-log = /var/log/irken-source.log]\n"
           "  [-users <file>]  name:password lines; everything needs a login\n"
+          "  [-passkeys <file>] passkeys (see README.md); everything needs a login\n"
           "  [-open]          no login at all (only on a private network!)\n"
-          "                   one of -users or -open is required.\n"
+          "                   one of -users, -passkeys or -open is required.\n"
           "  [-user <name>]   after binding the port, run as this user\n"
           "  [-d] print debugging output\n"
           "  [-h] print this usage.\n"
@@ -304,6 +306,7 @@ pre .d { color: #dcdcaa; font-weight: 600; }
         (key  "key.pem")
         (log  "/var/log/irken-source.log")
         (users (maybe:no))
+        (passkeys (maybe:no))
         (open? #f)
         (user (maybe:no)))
     (when-maybe v (get-bool-opt opts 'h) (usage))
@@ -315,6 +318,7 @@ pre .d { color: #dcdcaa; font-weight: 600; }
     (when-maybe v (get-string-opt opts 'log)  (set! log v))
     (when-maybe v (get-string-opt opts 'addr) (set! addr v))
     (when-maybe v (get-string-opt opts 'users) (when (> (string-length v) 0) (set! users (maybe:yes v))))
+    (when-maybe v (get-string-opt opts 'passkeys) (when (> (string-length v) 0) (set! passkeys (maybe:yes v))))
     (when-maybe v (get-string-opt opts 'user) (when (> (string-length v) 0) (set! user (maybe:yes v))))
     (when-maybe v (get-bool-opt opts 'open) (set! open? v))
     (set! *debugf* #f)
@@ -325,10 +329,10 @@ pre .d { color: #dcdcaa; font-weight: 600; }
     (when (not (isdir? root))
       (printf "-root: " (string root) " is not a directory\n")
       (usage))
-    (when (and (eq? users (maybe:no)) (not open?))
-      (printf "one of -users <file> or -open is needed.\n")
+    (when (and (eq? users (maybe:no)) (eq? passkeys (maybe:no)) (not open?))
+      (printf "one of -users <file>, -passkeys <file> or -open is needed.\n")
       (usage))
-    (run-server addr opts cert key log user users "source" (source-handler root libs)
+    (run-server addr opts cert key log user users passkeys "source" (source-handler root libs)
                 (lambda ()
                   (logf "serving " root)
                   (for-list lib libs
