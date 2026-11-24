@@ -13,6 +13,7 @@
    (arg 'log  (string "/var/log/irken-httpd.log"))
    (arg 'acme (string ""))
    (arg 'users (string ""))
+   (arg 'passkeys (string ""))
    (arg 'user (string ""))
    (arg 'x402 (string ""))
    (flag 'd)
@@ -44,7 +45,8 @@
           "     (/.well-known/acme-challenge/<token>) from <dir>/<token>\n"
           "  [-http <port>] use <port> instead of 80 for redirects & challenges\n"
           "  [-users <file>] users for /status (basic auth): name:password lines.\n"
-          "     without it, /status is disabled.\n"
+          "  [-passkeys <file>] passkeys for /status: see README.md.\n"
+          "     without -users or -passkeys, /status is disabled.\n"
           "  [-user <name>] after binding the ports, run as this user\n"
           "  [-x402 <file>] charge for paths with x402 payments: see x402/README.md\n"
           "     (start as root to bind ports 80 and 443)\n"
@@ -79,6 +81,7 @@
         (http-port 80)
         (log  "/var/log/irken-httpd.log")
         (users (maybe:no))
+        (passkeys (maybe:no))
         (user (maybe:no))
         (x402 (maybe:no)))
     (when-maybe v (get-bool-opt opts 'h) (usage))
@@ -91,6 +94,7 @@
     (when-maybe v (get-string-opt opts 'acme) (when (> (string-length v) 0) (set! acme-dir (maybe:yes v))))
     (when-maybe v (get-int-opt opts 'http) (set! http-port v))
     (when-maybe v (get-string-opt opts 'users) (when (> (string-length v) 0) (set! users (maybe:yes v))))
+    (when-maybe v (get-string-opt opts 'passkeys) (when (> (string-length v) 0) (set! passkeys (maybe:yes v))))
     (when-maybe v (get-string-opt opts 'user) (when (> (string-length v) 0) (set! user (maybe:yes v))))
     (when-maybe v (get-string-opt opts 'x402) (when (> (string-length v) 0) (set! x402 (maybe:yes v))))
     (set! *debugf* #f)
@@ -104,11 +108,13 @@
                   except
                   (:Serve/BadCreds why) -> (startup-failed why)))
           ((ip port) (split-addr addr))
-          (status (match users with
-                    (maybe:yes path)
-                    -> (list (basic-auth-wrapper (load-users path) "status" "/status" (status-handler addr opts)))
-                    (maybe:no)
-                    -> (begin (logf "no -users: /status is disabled") (list:nil))))
+          (status (match users passkeys with
+                    (maybe:no) (maybe:no)
+                    -> (begin (logf "no -users or -passkeys: /status is disabled") (list:nil))
+                    _ _
+                    -> (let ((login (login/make users passkeys)))
+                         (push! *sighup-hooks* (lambda () (login/reload! login #t)))
+                         (list (login-wrapper login "/status" (status-handler addr opts))))))
           ;; the site, behind x402 payments for the priced paths if -x402.
           (site (let ((files (host-handler root)))
                   (match x402 with

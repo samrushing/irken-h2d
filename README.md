@@ -32,9 +32,41 @@ file must then be readable by that user, for SIGHUP reloads.
 Status page and logging
 -----------------------
 
-/status/ (basic auth) is enabled with -users <file>, a file of
-"name:password" lines kept outside the repo (mode 0600: the server
-warns otherwise).  Without -users, /status/ is disabled.
+/status/ needs a login: a passkey (-passkeys <file>), or a password
+(-users <file>, a file of "name:password" lines kept outside the repo,
+mode 0600: the server warns otherwise).  With neither, /status/ is
+disabled.  The photo and source browsers take the same options, for
+the whole site.
+
+Passkeys
+--------
+
+With -passkeys, a browser that isn't logged in is sent to /login/,
+which logs in with a passkey (Touch ID, a phone, a security key...)
+and sets a session cookie, good for a week.  Sessions are kept in
+memory, so a restart logs everyone out.  With -users too, /login/ also
+offers "use a password", and basic auth keeps working (for curl, say).
+
+To add a passkey:
+
+1. The server logs an enrollment link at startup and on each reload
+   (SIGHUP): "to add a passkey (once, within the hour):
+   https://<host>/login/enroll/<token>".  It works once, for an hour.
+2. Open it on the host you'll use, give a name, and create the
+   passkey.  The page shows a line like "sam <credential-id> <key>".
+3. Add that line to the passkeys file, and reload the server
+   (service irken_h2d reload).  Only now does the passkey work: the
+   server never writes the file, so whoever can edit it decides who
+   gets in, and a leaked enrollment link is no use by itself.
+
+The passkeys file holds only public keys, so it needn't be secret, but
+it must not be writable by the server's user: e.g. root:wheel 0644.
+Delete a line (and reload) to revoke that passkey.
+
+A passkey belongs to the site's domain, taken as the host's last two
+labels (nightmare.com for dark.nightmare.com and www.nightmare.com),
+so one passkey works on all of a domain's hosts, but another domain
+(unintuitive.org) needs its own.  Passkeys can be ES256 or Ed25519.
 
 Under daemon(8), the server's output goes to syslog.  It logs only
 startup, SIGHUP reloads and errors, as plain lines; -d adds the

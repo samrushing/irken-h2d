@@ -402,6 +402,7 @@
    (arg 'key  (string "key.pem"))
    (arg 'log  (string "/var/log/irken-photos.log"))
    (arg 'users (string ""))
+   (arg 'passkeys (string ""))
    (arg 'user (string ""))
    (arg 'cache (string ""))
    (arg 'heif-dec (string "heif-dec"))
@@ -419,8 +420,9 @@
           "  [-key = key.pem]\n"
           "  [-log = /var/log/irken-photos.log]\n"
           "  [-users <file>]  name:password lines; everything needs a login\n"
+          "  [-passkeys <file>] passkeys (see README.md); everything needs a login\n"
           "  [-open]          no login at all (only on a private network!)\n"
-          "                   one of -users or -open is required.\n"
+          "                   one of -users, -passkeys or -open is required.\n"
           "  [-cache <dir>]   convert HEIC to JPEG (for browsers other than Safari),\n"
           "                   and keep those and scaled-down JPEG thumbnails here\n"
           "  [-heif-dec = heif-dec]  the converter (libheif's), run as\n"
@@ -451,6 +453,7 @@
         (key  "key.pem")
         (log  "/var/log/irken-photos.log")
         (users (maybe:no))
+        (passkeys (maybe:no))
         (open? #f)
         (user (maybe:no)))
     (when-maybe v (get-bool-opt opts 'h) (usage))
@@ -460,6 +463,7 @@
     (when-maybe v (get-string-opt opts 'log)  (set! log v))
     (when-maybe v (get-string-opt opts 'addr) (set! addr v))
     (when-maybe v (get-string-opt opts 'users) (when (> (string-length v) 0) (set! users (maybe:yes v))))
+    (when-maybe v (get-string-opt opts 'passkeys) (when (> (string-length v) 0) (set! passkeys (maybe:yes v))))
     (when-maybe v (get-string-opt opts 'user) (when (> (string-length v) 0) (set! user (maybe:yes v))))
     (when-maybe v (get-bool-opt opts 'open) (set! open? v))
     (when-maybe v (get-string-opt opts 'cache) (set! *cache* v))
@@ -473,11 +477,11 @@
     (when (not (isdir? root))
       (printf "-root: " (string root) " is not a directory\n")
       (usage))
-    (when (and (eq? users (maybe:no)) (not open?))
-      (printf "one of -users <file> or -open is needed.\n")
+    (when (and (eq? users (maybe:no)) (eq? passkeys (maybe:no)) (not open?))
+      (printf "one of -users <file>, -passkeys <file> or -open is needed.\n")
       (usage))
     (run-server
-     addr opts cert key log user users "photos" (photo-handler root)
+     addr opts cert key log user users passkeys "photos" (photo-handler root)
      (lambda ()
        (logf "serving " root)
        (if (caching?)

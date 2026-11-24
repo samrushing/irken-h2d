@@ -21,6 +21,8 @@
 # irken_h2d_users (path):    Users for /status (basic auth): "name:password"
 #                            lines, mode 0600.  Default "": /status disabled.
 # irken_h2d_log (path):      Server log file. Default "" (server's default).
+# irken_h2d_passkeys (path): Passkeys for /status ("name id key" lines,
+#                            made by /login/enroll/...): see README.md.
 # irken_h2d_args (str):      Any extra server arguments (e.g. "-r",
 #                            "-http 8080", or "-d" for debugging output).
 #                            Default "".
@@ -60,6 +62,7 @@ load_rc_config $name
 : ${irken_h2d_key:="/usr/local/etc/ssl/dark/dark.key"}
 : ${irken_h2d_acme="/var/acme"}
 : ${irken_h2d_users=""}
+: ${irken_h2d_passkeys=""}
 : ${irken_h2d_server_user=""}
 : ${irken_h2d_log=""}
 : ${irken_h2d_args:=""}
@@ -72,6 +75,7 @@ childpidfile="/var/run/${name}.child.pid"
 _server_args="-root ${irken_h2d_root} -cert ${irken_h2d_cert} -key ${irken_h2d_key}"
 [ -n "${irken_h2d_acme}" ] && _server_args="${_server_args} -acme ${irken_h2d_acme}"
 [ -n "${irken_h2d_users}" ] && _server_args="${_server_args} -users ${irken_h2d_users}"
+[ -n "${irken_h2d_passkeys}" ] && _server_args="${_server_args} -passkeys ${irken_h2d_passkeys}"
 [ -n "${irken_h2d_server_user}" ] && _server_args="${_server_args} -user ${irken_h2d_server_user}"
 [ -n "${irken_h2d_log}" ]  && _server_args="${_server_args} -log ${irken_h2d_log}"
 _server_args="${_server_args} ${irken_h2d_args} ${irken_h2d_addr}"

@@ -21,6 +21,7 @@
 (require "stats.scm")
 (require "handler.scm")
 (require "file-handler.scm")
+(require "login.scm")
 (require "timestamp.scm")
 (require "dns.scm") ;; for ptr lookups
 
@@ -223,6 +224,7 @@
      (:OSError n) -> (logf "SIGHUP: can't reopen " log ": " (strerror n) ": keeping the old one")))
   (define (reload)
     (reopen-log)
+    (for-list hook *sighup-hooks* (hook))
     (try
      (let ((new (load-creds cert key)))
        (set! creds.x509s new.x509s)
@@ -271,6 +273,8 @@
     users))
 
 (define *logfile* (maybe:no))
+;; more things to do on SIGHUP (e.g. re-reading the passkeys).
+(define *sighup-hooks* (list:nil))
 (define *stats* (make-server-history 1000))
 (define *expires-delta* 3600) ;; for the Expires: header - one hour.
 
@@ -292,22 +296,26 @@
     _         -> (startup-failed (format "bad address: " addr))))
 
 ;; serve <app> (a handler) on <addr>.  everything is behind a login if
-;;  <users> (a users file) is given, and /status/ (which can shut the
-;;  server down) is there only then.  <realm> names the login.  (setup)
-;;  is called once the log is open, before listening.
-(define (run-server addr opts cert key log user users realm app setup)
+;;  <users> (a users file) or <passkeys> (a passkeys file) is given, and
+;;  /status/ (which can shut the server down) is there only then.
+;;  <realm> names the program, for the log.  (setup) is called once the
+;;  log is open, before listening.
+(define (run-server addr opts cert key log user users passkeys realm app setup)
   (let ((creds (try
                 (load-creds cert key)
                 except
                 (:Serve/BadCreds why) -> (startup-failed why)))
         ((ip port) (parse-addr addr))
+        (open? (and (eq? users (maybe:no)) (eq? passkeys (maybe:no))))
         (handlers (multi-handler
-                   (append (if (eq? users (maybe:no)) (list:nil) (list (status-handler addr opts)))
+                   (append (if open? (list:nil) (list (status-handler addr opts)))
                            (list favicon-handler app))))
         (handler (h2-handler
-                  (match users with
-                    (maybe:yes path) -> (basic-auth-wrapper (load-users path) realm "/" handlers)
-                    (maybe:no) -> (begin (logf "-open: no login needed") handlers)))))
+                  (if open?
+                      (begin (logf realm ": -open: no login needed") handlers)
+                      (let ((login (login/make users passkeys)))
+                        (push! *sighup-hooks* (lambda () (login/reload! login #t)))
+                        (login-wrapper login "/" handlers))))))
     (set! *logfile* (maybe:yes (open-log log)))
     (setup)
     (let ((sock (listen-on ip port)))

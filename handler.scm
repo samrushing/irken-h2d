@@ -497,33 +497,37 @@
 ;; --------------------------------------------------------------------------------
 ;; basic authentication
 
+;; the user named by <request>'s basic-auth credentials, if they're good.
+(define (basic-auth-user usermap request)
+  (match (lookup-header "authorization" request.headers) with
+    (maybe:yes auth)
+    -> (match (string-split auth #\space) with
+         ("Basic" b64auth)
+         ;; user-id ":" password: the password may contain colons
+         ;;  (rfc7617 2), so split at the first one.
+         -> (let ((creds (b64-decode b64auth))
+                  (colon (string-find ":" creds)))
+              (if (< colon 0)
+                  (maybe:no)
+                  (let ((name (substring creds 0 colon)))
+                    (match (tree/member usermap string-cmp name) with
+                      (maybe:yes pass0)
+                      ;; compare hashes: constant-time, whatever the lengths.
+                      -> (if (constant-time-string=?
+                              (sha256 (substring creds (+ colon 1) (string-length creds)))
+                              (sha256 pass0))
+                             (maybe:yes name)
+                             (maybe:no))
+                      _ -> (maybe:no)))))
+         _ -> (maybe:no))
+    _ -> (maybe:no)))
+
 (define (basic-auth-wrapper usermap realm path-prefix other-handler)
 
   (lambda (request)
 
     (define (check-auth request)
-      (match (lookup-header "authorization" request.headers) with
-        (maybe:yes auth)
-        -> (match (string-split auth #\space) with
-             ("Basic" b64auth)
-             ;; user-id ":" password: the password may contain colons
-             ;;  (rfc7617 2), so split at the first one.
-             -> (let ((creds (b64-decode b64auth))
-                      (colon (string-find ":" creds)))
-                  (if (< colon 0)
-                      #f
-                      (match (tree/member usermap string-cmp (substring creds 0 colon)) with
-                        (maybe:yes pass0)
-                        ;; compare hashes: constant-time, whatever the lengths.
-                        -> (constant-time-string=?
-                            (sha256 (substring creds (+ colon 1) (string-length creds)))
-                            (sha256 pass0))
-                        _ -> #f
-                        )))
-             _ -> #f
-             )
-        _ -> #f
-        ))
+      (not (eq? (basic-auth-user usermap request) (maybe:no))))
 
     (define (handle request)
       (if (check-auth request)
