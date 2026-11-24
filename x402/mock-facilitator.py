@@ -11,12 +11,16 @@
 #   0x...beef  passes verify, but settling fails (insufficient_funds),
 #              as if the money left between the two.
 #
+# answers are gzipped when the client accepts that, so that its
+#   decompressing them is tested too.
+#
 #   python3 x402/mock-facilitator.py -port 4402 -cert fac.pem -key fac-key.pem
 #
 # see x402/test-e2e.py, which runs it.
 
 import sys
 import ssl
+import gzip
 import json
 import time
 import argparse
@@ -59,8 +63,12 @@ class Handler (http.server.BaseHTTPRequestHandler):
 
     def answer (self, status, ob):
         data = json.dumps (ob).encode()
+        self.gzipped = 'gzip' in self.headers.get ('accept-encoding', '')
         self.send_response (status)
         self.send_header ('content-type', 'application/json')
+        if self.gzipped:
+            data = gzip.compress (data)
+            self.send_header ('content-encoding', 'gzip')
         self.send_header ('content-length', str (len (data)))
         self.end_headers()
         self.wfile.write (data)
@@ -97,7 +105,8 @@ class Handler (http.server.BaseHTTPRequestHandler):
                 self.answer (200, {'success': True, 'payer': payer, 'transaction': tx, 'network': network})
         else:
             return self.answer (404, {})
-        print ('mock-facilitator: %s %s -> %s' % (self.path, payer, reason or 'ok'), flush=True)
+        print ('mock-facilitator: %s %s -> %s%s' % (self.path, payer, reason or 'ok',
+                                                    ' (gzipped)' if self.gzipped else ''), flush=True)
 
     def log_message (self, *args):
         pass

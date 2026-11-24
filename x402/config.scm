@@ -39,7 +39,7 @@
     (x402-config-error (format "no such file: " path)))
   (let ((settings (tree/empty))
         (prices (list:nil)))
-    (for-list line (x402-config-lines path)
+    (for-list line (config-lines path)
       (match line with
         () -> #u
         ("price" prefix amount . description)
@@ -78,7 +78,10 @@
         (x402-config-error (format "pay-to: not an address: " pay-to)))
       (when (and (> (string-length root) 0) (not (isfile? root)))
         (x402-config-error (format "facilitator-root: no such file: " root)))
-      (let ((anchors (x402/load-anchors root)))
+      (let ((anchors (try
+                      (load-trust-anchors root)
+                      except
+                      (:HTTPS/Failed why) -> (x402-config-error (format "facilitator certificates: " why)))))
         (when (null? anchors)
           (x402-config-error (format "no trusted certificates for the facilitator in "
                                      (if (> (string-length root) 0) root "the system's bundle"))))

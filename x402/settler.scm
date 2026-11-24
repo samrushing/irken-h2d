@@ -13,7 +13,7 @@
 ;;  would be another settler with the same two functions.
 
 (require "x402/x402.scm")
-(require "x402/https.scm")
+(require "doom/http/client.scm")
 
 (datatype x402-verified
   (:ok string)        ;; a good payment, from this payer
@@ -39,29 +39,30 @@
 ;;
 ;; <anchors> are the certificates trusted for the facilitator's
 ;;  server: the system's roots, or (for testing) its own certificate.
-
-;; the facilitator may compress its answer.
-(define (x402-decode-body resp)
-  (match (lookup-header "content-encoding" resp.headers) with
-    (maybe:no) -> resp.body
-    (maybe:yes "identity") -> resp.body
-    (maybe:yes other) -> (raise (:X402/Facilitator (format "answered with content-encoding " other)))))
+;;
+;; requests go through doom/http/client.scm (TLS 1.3, then HTTP/2 or
+;;  HTTP/1.1, whichever the facilitator offers), which undoes any
+;;  compression.  that needs an Irken whose HTTP/2 server and client
+;;  agree on (:H2/BadFrame <string>): see x402/README.md.
 
 ;; POST <body> to <url>: (:tuple status (maybe json)), or raises
 ;;  (:X402/Facilitator why).
 (define (x402-post url body anchors)
   (let ((resp (try
-               (x402/https-request "POST" url
-                                   (list (:tuple "content-type" "application/json")
-                                         (:tuple "accept" "application/json")
-                                         (:tuple "user-agent" "irken-h2d"))
-                                   body anchors)
+               (https/request "POST" url
+                              (list (:tuple "content-type" "application/json")
+                                    (:tuple "accept" "application/json")
+                                    (:tuple "accept-encoding" "gzip, deflate")
+                                    (:tuple "user-agent" "irken-h2d"))
+                              body anchors)
                except
-               (:X402/HTTPS why) -> (raise (:X402/Facilitator why))
+               (:HTTPS/Failed why) -> (raise (:X402/Facilitator why))
+               (:X509/Invalid why) -> (raise (:X402/Facilitator (format "certificate: " why)))
+               (:TLS/Alert _ why) -> (raise (:X402/Facilitator (format "TLS: " why)))
                (:OSError n) -> (raise (:X402/Facilitator (strerror n))))))
     (:tuple resp.status
             (try
-             (maybe:yes (x402-json-parse (x402-decode-body resp)))
+             (maybe:yes (x402-json-parse resp.body))
              except
              (:NoParse _) -> (maybe:no)))))
 

@@ -151,7 +151,8 @@ def main():
         wait_for (site_port, srv, 'serve')
 
         def settlements():
-            return sum (1 for l in open (PJ (tmp, 'facilitator.out')) if l.startswith ('mock-facilitator: /settle') and l.rstrip().endswith ('ok'))
+            return sum (1 for l in open (PJ (tmp, 'facilitator.out'))
+                        if l.startswith ('mock-facilitator: /settle') and ' -> ok' in l)
 
         r = get (site_port, '/')
         check ('a free page is free', r.status == 200 and r.body == 'free page\n' and 'payment-required' not in r.headers,
@@ -222,6 +223,10 @@ def main():
 
         r = get (site_port, '/premium/article.html', {'payment-signature': b64 (payment())})
         check ('the server still works after all that', r.status == 200 and r.body == 'paid article\n', str (r.status))
+
+        answers = [l for l in open (PJ (tmp, 'facilitator.out')) if l.startswith ('mock-facilitator: /')]
+        check ('the facilitator\'s answers were compressed, and read', answers and all (l.rstrip().endswith ('(gzipped)') for l in answers),
+               ''.join (answers[:3]))
 
         fac.terminate(); fac.wait()
         r = get (site_port, '/premium/article.html', {'payment-signature': b64 (payment())})

@@ -13,9 +13,17 @@ planned; see "Settlers" below.)
 
 ## Building
 
-This needs an Irken whose `lib/json.scm` parses empty objects (`{}`), which
-x402 clients send: irken-compiler's `mburr/json-empty-object` branch, until
-that's merged.  Then build `serve.scm` as usual.
+This needs an Irken with two fixes:
+
+* `lib/json.scm` parses empty objects (`{}`), which x402 clients send.  (In
+  irken-compiler's master since `a2d7755`.)
+* the HTTP/2 server and client agree on the type of `:H2/BadFrame` (a
+  string), so that one program can have both: irken-h2d serves HTTP/2 and
+  makes HTTPS requests to the facilitator.  (irken-compiler's
+  `h2-bad-frame-reason` branch, until it's merged.)  Without it, `serve.scm`
+  fails to compile with `type error: string vs. {type=H2-FRAME ...}`.
+
+Then build `serve.scm` as usual.
 
 ## Running
 
@@ -62,8 +70,8 @@ same as `/premium/x`.
 ## Files
 
 * `x402.scm`: the protocol's messages and headers.
-* `settler.scm`: settlers, and the facilitator client.
-* `https.scm`: the HTTPS (HTTP/1.1) requests the facilitator client makes.
+* `settler.scm`: settlers, and the facilitator client (over Irken's
+  `doom/http/client.scm`).
 * `config.scm`: reading the configuration.
 * `handler.scm`: the handler that charges for priced paths.
 * `t-x402.scm`: tests of `x402.scm` against the spec's examples.
