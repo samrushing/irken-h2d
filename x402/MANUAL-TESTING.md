@@ -5,7 +5,7 @@ verified and settled by the public x402.org facilitator.  Everything runs on
 your own machine; only the server talks to the facilitator, and nothing needs
 to be reachable from the internet.  First done on 2026-11-25 (macOS, Apple
 silicon): transaction
-`0x7282a94a5d0031e1697fe3e99b73d4e945f1b952dedabf0365ef2ef5f73ed81c`.
+[`0x7282a94a5d0031e1697fe3e99b73d4e945f1b952dedabf0365ef2ef5f73ed81c`](https://sepolia.basescan.org/tx/0x7282a94a5d0031e1697fe3e99b73d4e945f1b952dedabf0365ef2ef5f73ed81c).
 
 Use throwaway wallets only.  `pay.py` keeps keys unencrypted.
 
