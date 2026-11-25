@@ -76,6 +76,7 @@ same as `/premium/x`.
 * `handler.scm`: the handler that charges for priced paths.
 * `t-x402.scm`: tests of `x402.scm` against the spec's examples.
 * `mock-facilitator.py`, `test-e2e.py`: an end-to-end test (below).
+* `pay.py`: a small client that pays (below).
 
 ## Settlers
 
@@ -96,6 +97,43 @@ replayed, are for the wrong amount or address, are malformed, or fail at
 verify or at settle; paths that try to get around the price; that a 404 isn't
 charged; and that the server copes without the facilitator.  It needs
 python3, openssl, and a curl with HTTP/2.
+
+## Paying for real (testnet)
+
+`pay.py` is a small x402 client: it asks for a page, reads the 402, signs
+exactly the payment asked for (a USDC `transferWithAuthorization`, EIP-712
+signed), and asks again with it.  It speaks HTTP/2, as irken-h2d must be
+spoken to, and makes throwaway wallets.  For testnets and throwaway keys only:
+keys are kept unencrypted in `~/.x402-test/<name>.key` (mode 0600).
+
+    $ pip install eth-account "httpx[http2]"
+
+1. Two wallets: one to be paid, one to pay.
+
+       $ python3 x402/pay.py new-wallet payee
+       $ python3 x402/pay.py new-wallet payer
+
+2. Test USDC for the payer, from https://faucet.circle.com (Base Sepolia).
+   The payer needs no ETH: the facilitator submits the transfer and pays the
+   gas.  Check with `python3 x402/pay.py balance payer`.
+
+3. A configuration: `x402.conf.example`, with `pay-to` set to the payee's
+   address (`python3 x402/pay.py address payee`) and a small price (say
+   `1000`, 0.001 USDC).  The facilitator is `https://x402.org/facilitator`,
+   which is free and needs no key, and runs on Base Sepolia.
+
+4. Run the server (any certificate for localhost will do) and pay:
+
+       $ ./serve 127.0.0.1:4433 -root <www> -cert <cert> -key <key> -r -log x402.log -x402 x402.conf
+       $ python3 x402/pay.py get https://localhost:4433/premium/<page> -key payer -k
+
+   The page is `<www>/localhost/premium/<page>`: under `-root`, a
+   directory per host name.  `-r` and `-log` keep the server off port 80
+   and out of /var/log.  `-k` doesn't check the server's certificate; `-cacert <pem>` checks it
+   against a file.  `-dry-run` signs and shows the payment without sending
+   it.  The answer's `PAYMENT-RESPONSE` names the transaction, with a link to
+   it on sepolia.basescan.org; the balances (`balance payer`, `balance
+   payee`) move by the price.
 
 ## Not done yet
 
