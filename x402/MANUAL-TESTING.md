@@ -11,9 +11,9 @@ Use throwaway wallets only.  `pay.py` keeps keys unencrypted.
 
 ## 0. What you need
 
-* irken-compiler built (`make bootstrap`) and irken-h2d's `serve` built
-  against it.  `irken-test-all.sh`, next to the two repos, does both and runs
-  the automated tests; run it first.
+* irken-compiler built (`make bootstrap`) and irken-h2d's `x402/serve` built
+  against it, with the automated tests passing (see "Building" and
+  "Testing" in `README.md`); run them first.
 * Python 3.10 to 3.13 (tested with 3.10 and 3.13), in a venv.  macOS's own
   `/usr/bin/python3` (3.9) is too old, and very new Pythons may have to
   compile some dependencies.  With Homebrew:
@@ -85,7 +85,7 @@ testnets only.
 In one terminal (`-d` shows what it's doing):
 
     cd ~/tmp/x402-real
-    ~/git/irken/irken-h2d/serve 127.0.0.1:4433 -root www -cert cert.pem -key key.pem \
+    ~/git/irken/irken-h2d/x402/serve 127.0.0.1:4433 -root www -cert cert.pem -key key.pem \
         -r -log x402.log -x402 x402.conf -d
 
 `-root` holds a directory per host name, hence `www/localhost/`.  `-r` and
@@ -130,7 +130,7 @@ Expect:
 * **500 from the server:** it couldn't reach the facilitator, or its answer
   made no sense; the server's terminal says why (`x402: verifying ...` or
   `x402: settling ...`).
-* **`pay.py` can't connect:** is `serve` running, on 4433?  The server
+* **`pay.py` can't connect:** is `x402/serve` running, on 4433?  The server
   speaks only HTTP/2, which `pay.py` uses; most other clients (curl without
   `--http2`, Python `requests`) can't connect.
 * **`balance` fails:** it asks Base Sepolia's public RPC,

@@ -3,7 +3,6 @@
 ;; irken-h2d: an HTTP/2 file server.
 
 (require "server.scm")
-(require "x402/handler.scm")
 
 (define program-options
   (makeopt
@@ -15,7 +14,6 @@
    (arg 'users (string ""))
    (arg 'passkeys (string ""))
    (arg 'user (string ""))
-   (arg 'x402 (string ""))
    (flag 'd)
    (arg 'http (int 80))
    (flag 'r)
@@ -49,7 +47,6 @@
           "     without -users or -passkeys, /status is disabled.\n"
           "  [-user <name>] after binding the ports, run as this user\n"
           "     (start as root to bind ports 80 and 443)\n"
-          "  [-x402 <file>] charge for paths with x402 payments: see x402/README.md\n"
           "  [-d] print debugging output\n"
           "  [-h] print this usage.\n"
           "\n"
@@ -82,8 +79,7 @@
         (log  "/var/log/irken-httpd.log")
         (users (maybe:no))
         (passkeys (maybe:no))
-        (user (maybe:no))
-        (x402 (maybe:no)))
+        (user (maybe:no)))
     (when-maybe v (get-bool-opt opts 'h) (usage))
     (when-maybe v (get-bool-opt opts 'r) (set! redirect? #f))
     (when-maybe v (get-string-opt opts 'root) (set! root v))
@@ -96,7 +92,6 @@
     (when-maybe v (get-string-opt opts 'users) (when (> (string-length v) 0) (set! users (maybe:yes v))))
     (when-maybe v (get-string-opt opts 'passkeys) (when (> (string-length v) 0) (set! passkeys (maybe:yes v))))
     (when-maybe v (get-string-opt opts 'user) (when (> (string-length v) 0) (set! user (maybe:yes v))))
-    (when-maybe v (get-string-opt opts 'x402) (when (> (string-length v) 0) (set! x402 (maybe:yes v))))
     (set! *debugf* #f)
     (when-maybe v (get-bool-opt opts 'd) (set! *debugf* v))
     ;; the runtime's GC messages (on stderr, so also in syslog) too.
@@ -115,24 +110,11 @@
                     -> (let ((login (login/make users passkeys)))
                          (push! *sighup-hooks* (lambda () (login/reload! login #t)))
                          (list (login-wrapper login "/status" (status-handler addr opts))))))
-          ;; the site, behind x402 payments for the priced paths if -x402.
-          (site (let ((files (host-handler root)))
-                  (match x402 with
-                    (maybe:yes path)
-                    -> (let ((config (try
-                                      (x402/load-config path)
-                                      except
-                                      (:X402/BadConfig why) -> (startup-failed (format path ": " why)))))
-                         (logf "x402: " (int (length config.prices)) " prices from " path
-                               ", paid to " config.terms.pay-to " on " config.terms.network
-                               ", settled by " config.settler.name)
-                         (multi-handler (list (x402-wrapper config files) files)))
-                    (maybe:no) -> files)))
           (handler (h2-handler
                     (multi-handler
                      (append status
                              (list favicon-handler
-                                   site)))))
+                                   (host-handler root))))))
           ;;(handler (h2-handler (host-handler root)))
           )
       (set! *logfile* (maybe:yes (open-log log)))

@@ -1,10 +1,10 @@
 # -*- Mode: Python -*-
 
-# x402 end to end: a real irken-h2d (serve) charging for a directory,
+# x402 end to end: a real irken-h2d (x402/serve) charging for a directory,
 #   settled by x402/mock-facilitator.py, exercised with curl over
 #   HTTP/2.  needs python3, openssl, and a curl with HTTP/2.
 #
-#   python3 x402/test-e2e.py ./serve
+#   python3 x402/test-e2e.py x402/serve
 #
 # everything (certificates, site, config, logs) goes in a scratch
 #   directory, removed afterwards unless -k.
@@ -111,7 +111,7 @@ def check (name, ok, detail=''):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument ('serve', help='the irken-h2d binary')
+    ap.add_argument ('serve', help='the x402/serve binary')
     ap.add_argument ('-k', action='store_true', help='keep the scratch directory')
     args = ap.parse_args()
     serve = os.path.abspath (args.serve)

@@ -1,6 +1,6 @@
 # x402 payments
 
-irken-h2d can charge for parts of a site with [x402](https://www.x402.org)
+`x402/serve`, a version of irken-h2d's `serve`, charges for parts of a site with [x402](https://www.x402.org)
 (version 2): HTTP 402 Payment Required, paid in a stablecoin such as USDC on
 an EVM chain.  A client asks for a priced page, gets a 402 saying what to
 pay, signs a payment, and asks again with it; the server has the payment
@@ -13,21 +13,23 @@ planned; see "Settlers" below.)
 
 ## Building
 
-This needs an Irken with two fixes:
+`x402/serve.scm` is `serve.scm` with `-x402` added, a program of its own (like
+`photos/` and `source/`) so that plain `serve` has none of the x402 code.  Its
+`main` is a copy of `serve.scm`'s: a change to one should go in the other.
+From the top of the tree:
 
-* `lib/json.scm` parses empty objects (`{}`), which x402 clients send.  (In
-  irken-compiler's master since `a2d7755`.)
-* the HTTP/2 server and client agree on the type of `:H2/BadFrame` (a
-  string), so that one program can have both: irken-h2d serves HTTP/2 and
-  makes HTTPS requests to the facilitator.  (irken-compiler's
-  `h2-bad-frame-reason` branch, until it's merged.)  Without it, `serve.scm`
-  fails to compile with `type error: string vs. {type=H2-FRAME ...}`.
+    $ irken x402/serve.scm
 
-Then build `serve.scm` as usual.
+which makes `x402/serve`.  It needs an irken-compiler from after November
+2026 (master has the fixes it needs: `{}` in `lib/json.scm`, and one type for
+`:H2/BadFrame` so a program can be both an HTTP/2 server and an HTTPS
+client).
 
 ## Running
 
-    $ serve 0.0.0.0:443 -root /var/www/data -cert ... -key ... -x402 /usr/local/etc/x402.conf
+    $ x402/serve 0.0.0.0:443 -root /var/www/data -cert ... -key ... -x402 /usr/local/etc/x402.conf
+
+It takes all of `serve`'s options; `-x402` is required.
 
 See `x402.conf.example`.  The configuration is checked at startup, and the
 server won't start if anything is missing or malformed.  It names:
@@ -89,9 +91,9 @@ signing, and a JSON-RPC client for an Ethereum node.
 ## Testing
 
     $ irken x402/t-x402.scm && x402/t-x402      # compare with the ";; =>" lines
-    $ python3 x402/test-e2e.py ./serve
+    $ python3 x402/test-e2e.py x402/serve
 
-`test-e2e.py` runs `serve` with a price on `/premium/`, against
+`test-e2e.py` runs `x402/serve` with a price on `/premium/`, against
 `mock-facilitator.py` (which checks everything but the signature, and has no
 blockchain), and uses curl to check: the 402, payments that work, are
 replayed, are for the wrong amount or address, are malformed, or fail at

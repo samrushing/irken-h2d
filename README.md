@@ -88,9 +88,10 @@ reopen the log, it logs why and keeps writing to the old file.
 x402 payments
 -------------
 
-With -x402 <file>, the server charges for priced paths with x402
-(HTTP 402 Payment Required, paid in e.g. USDC), verified and settled
-by a facilitator.  See x402/README.md.
+x402/serve is serve with x402 payments: with -x402 <file>, it charges
+for priced paths (HTTP 402 Payment Required, paid in e.g. USDC),
+verified and settled by a facilitator.  It's a program of its own, so
+serve has none of it.  See x402/README.md.
 
 Certificates
 ------------
